@@ -389,6 +389,13 @@ dialog::backdrop{background:rgba(10,18,25,.55)}
 dl.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:0;font-size:14px}
 dl.kv dt{color:var(--ink-3)}
 dl.kv dd{margin:0;overflow-wrap:anywhere}
+.chk-i{display:flex;gap:10px;align-items:flex-start;align-self:stretch;justify-content:flex-start;text-align:left;width:100%;box-sizing:border-box;font-size:15px;line-height:1.35;padding:7px 4px;border-bottom:1px solid var(--line-2);cursor:pointer}
+.chk-i:last-of-type{border-bottom:0}
+.chk-i input{width:20px;height:20px;flex:none;margin:0;accent-color:var(--done)}
+.chk-i input:checked + span{color:var(--ink-3)}
+fieldset.chk legend .z{font-weight:600}
+fieldset.chk.ok{border-color:var(--done)}
+.std-ta{width:100%;min-height:110px;font:inherit;font-size:14px;line-height:1.45;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--ink);padding:8px 10px;resize:vertical}
 .hist{border-left:3px solid var(--line);padding:4px 0 4px 12px;font-size:14px;color:var(--ink-2);display:flex;flex-direction:column;gap:4px}
 .field{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--ink-2)}
 .field input,.field select,.field textarea{font-weight:400;font-size:15px;color:var(--ink);border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding:8px 10px;min-width:0}
@@ -672,7 +679,7 @@ const UI_KEY = "preventif-ui-"+YEAR, LOCAL_KEY = "preventif-suivi-"+YEAR;
 const ui = lsGet(UI_KEY, {});
 const S = {
   suivi:{}, config:{}, mode:"loading", loaded:false, canWrite:false, uid:null, user:null, dl:null, db:null,
-  reqs:{}, mods:{}, ov:{}, users:{}, fb:null, isOwner:false, editing:false, brush:"M", undo:[], fold: ui.fold || {}, org:{}, openTech:{}, showPeople: ui.showPeople !== false,
+  reqs:{}, mods:{}, ov:{}, users:{}, std:{}, fb:null, isOwner:false, editing:false, brush:"M", undo:[], fold: ui.fold || {}, org:{}, openTech:{}, showPeople: ui.showPeople !== false,
   view:"hub", theme: ui.theme || "auto", meName:"", colorBy: ui.colorBy || "statut", hideDone: !!ui.hideDone, expanded:{},
   filters:{svc: ui.svc || "", who: ui.who || "", q:""}
 };
@@ -1061,7 +1068,7 @@ function fbSyncMats(){
 function fbLeave(){
   fbData.forEach(f => f()); fbData = [];
   for(const k of Object.keys(modSubs)){ modSubs[k](); delete modSubs[k]; }
-  Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}, techMats:undefined, orgLoaded:false});
+  Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}, std:{}, techMats:undefined, orgLoaded:false});
   NT.late = null; NT.pend = null;
   buildMachines();
 }
@@ -1337,7 +1344,7 @@ async function initStore(){
   if(BUILD.preview){ S.mode = "readonly"; S.loaded = true; buildMachines(); render(); return; } // GitHub Pages avant que Firebase soit relié
   const hasHost = window.claude && typeof window.claude.use === "function";
   if(!hasHost){
-    const o = lsGet(LOCAL_KEY, {}); S.suivi = o.suivi || {}; S.config = o.config || {}; S.mods = o.mods || {}; S.org = o.org || {};
+    const o = lsGet(LOCAL_KEY, {}); S.suivi = o.suivi || {}; S.config = o.config || {}; S.mods = o.mods || {}; S.org = o.org || {}; S.std = o.std || {};
     S.mode = "local"; S.loaded = true; S.canWrite = true; S.isOwner = true; buildMachines(); render(); return;
   }
   render();
@@ -1358,6 +1365,7 @@ function subscribeAll(db){ // renvoie les fonctions de désabonnement
     }, err => { toast("Synchronisation interrompue ("+err.code+"). Rechargez la page.", "late"); }),
     db.doc("config/main").onSnapshot(snap => { S.config = snap.exists ? snap.data() : {}; syncModSubs(); buildMachines(); scheduleRender(); }, () => {}),
     db.collection(REQ_COLL).onSnapshot(snap => { const o = {}; for(const d of snap.docs) o[d.id] = d.data(); S.reqs = o; scheduleRender(); }, () => {}),
+    db.doc("config/std").onSnapshot(snap => { S.std = snap.exists ? snap.data() : {}; scheduleRender(); }, () => {}),
     db.doc("config/org").onSnapshot(snap => { S.org = snap.exists ? snap.data() : {}; S.orgLoaded = true; buildMachines(); scheduleRender(); if(FIREBASE) fbSyncMats(); }, () => {})
   ];
 }
@@ -1403,7 +1411,7 @@ async function writeConfig(patch){
   try{ await S.db.doc("config/main").set(next); return true; }
   catch(e){ toast("Réglage non enregistré ("+(e && e.code)+").", "late"); return false; }
 }
-function saveLocalAll(){ if(!lsSet(LOCAL_KEY, {suivi:S.suivi, config:S.config, mods:S.mods, org:S.org})) toast("Ce navigateur refuse l'enregistrement local.", "late"); }
+function saveLocalAll(){ if(!lsSet(LOCAL_KEY, {suivi:S.suivi, config:S.config, mods:S.mods, org:S.org, std:S.std})) toast("Ce navigateur refuse l'enregistrement local.", "late"); }
 const modQ = {};
 let ownerP = null;
 function ensureOwner(){ // les modifications du manager ne sont visibles des autres qu'une fois son id connu
@@ -1917,7 +1925,7 @@ function renderAffect(D){
 
   const resetBtn = own && S.org && ((S.org.tl || []).length || (S.org.tlRename || []).length || Object.keys(S.org.tls || {}).length || (S.org.techRename || []).length)
     ? `<button class="btn danger" data-act="orgreset" data-svc="${f.svc}">Revenir aux équipes de l'Excel${f.svc ? " · " + esc(SVC[f.svc].name) : ""}</button>` : "";
-  let chart = `<div class="panel"><div class="panel-h"><h2>Organigramme</h2><span class="note">Manager › TL de section › techniciens A·S·T et techniciens M (nombre de machines). En rouge : à corriger.</span><div class="tools">${own ? `<button class="btn" data-act="mats">Matricules des techniciens</button><button class="btn pri" data-act="secform" data-svc="">Ajouter une section</button>` : ""}${resetBtn}</div></div><div class="org">
+  let chart = `<div class="panel"><div class="panel-h"><h2>Organigramme</h2><span class="note">Manager › TL de section › techniciens A·S·T et techniciens M (nombre de machines). En rouge : à corriger.</span><div class="tools">${own ? `<button class="btn" data-act="std" data-svc="">Standards préventifs</button><button class="btn" data-act="mats">Matricules des techniciens</button><button class="btn pri" data-act="secform" data-svc="">Ajouter une section</button>` : ""}${resetBtn}</div></div><div class="org">
     <div class="org-mgr"><div class="eyebrow">Manager maintenance</div><b>${esc(mgrName())}</b>${own ? `<button class="lk" data-act="orgform" data-k="manager">${S.org && S.org.manager ? "Modifier le nom" : "Indiquer votre nom"}</button>` : ""}</div>
     <div class="org-stem"></div><div class="org-groups">`;
   for(const g of tlGroups(svcs)){
@@ -2022,7 +2030,7 @@ function openSectionEditor(svc){
       <fieldset class="rep"><legend>TL · responsables de section</legend><div class="erows" id="se-tl">${sec.tls.map(R.tl).join("")}</div><div><button type="button" class="addp" data-act="se-add" data-k="tl">+ Ajouter un TL</button></div></fieldset>
       ${two ? `<fieldset class="rep"><legend>Techniciens A·S·T · annuel, semestriel, trimestriel</legend><div class="erows" id="se-ast">${asts.map(([n, k]) => R.ast(Object.assign({}, (sec.chefInfo || {})[n], {name:n, n:k}))).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Corrigez le nom, le matricule, le shift et le TL. Taper le nom d'un autre technicien A·S·T lui donne toutes ces machines. Retirer (×) : le technicien M de ces machines fera aussi les A·S·T.</p></fieldset>` : ""}
       <fieldset class="rep"><legend>${two ? "Techniciens M · mensuel" : "Techniciens · tous les préventifs"}</legend><div class="erows" id="se-mt">${mts.map(([n, k]) => R.mt({name:n, n:k})).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Matricule : facultatif, il sert à retrouver le technicien dans la recherche. Corriger un nom le corrige dans toutes les sections ; taper le nom d'un autre technicien fusionne les deux. Pour changer le technicien d'une seule machine : fiche machine › Modifier.</p></fieldset>
-      <fieldset class="rep"><legend>Planning de la section</legend><div class="row-btns"><button type="button" class="btn" data-act="se-plan" data-svc="${esc(svc)}">Modifier le planning de la section</button><button type="button" class="btn" data-act="se-addm" data-svc="${esc(svc)}">Ajouter une machine</button></div><p class="z" style="margin:0;font-size:12.5px">${esc(normText(svc))}</p></fieldset>
+      <fieldset class="rep"><legend>Planning de la section</legend><div class="row-btns"><button type="button" class="btn" data-act="se-plan" data-svc="${esc(svc)}">Modifier le planning de la section</button><button type="button" class="btn" data-act="se-addm" data-svc="${esc(svc)}">Ajouter une machine</button><button type="button" class="btn" data-act="std" data-svc="${esc(svc)}">Standard préventif</button></div><p class="z" style="margin:0;font-size:12.5px">${esc(normText(svc))}</p></fieldset>
       <datalist id="se-people">${people.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
       <datalist id="shift-dl">${SHIFT_SUGG.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
     </div>
@@ -2105,6 +2113,45 @@ function openMats(){
     const txt = ch.slice(0, 6).map(([n, v]) => `${n} ${v || "(retiré)"}`).join(", ") + (ch.length > 6 ? ` … (+${ch.length - 6})` : "");
     const lbl = [ch.length ? `Matricules : ${txt}` : "", chC.length ? `contacts : ${chC.length}` : ""].filter(Boolean).join(" · ");
     if(await writeOrg(o => { setMats(o, ch); setContacts(o, chC); }, lbl)){ closeDlg(); toast(`${ch.length + chC.length} changement${ch.length + chC.length > 1 ? "s" : ""} enregistré${ch.length + chC.length > 1 ? "s" : ""}.`); }
+  });
+}
+/* Standards préventifs : config/std {section: {M: [points], T: [...], ...}}.
+   La check-list du standard s'affiche quand on marque un préventif fait ; tous les points doivent être cochés. */
+const stdList = (svc, code) => ((((S.std || {})[svc] || {})[code]) || []).filter(x => typeof x === "string" && x.trim());
+async function writeStd(svc, entry, txt){
+  if(!canOrg()){ toast("Réservé au manager maintenance.", "late"); return false; }
+  const next = Object.assign({}, clone(S.std) || {}, {[svc]: entry});
+  if(S.mode === "local"){ S.std = next; saveLocalAll(); scheduleRender(); }
+  else{ try{ await S.db.doc("config/std").set(next); }catch(e){ toast("Standard non enregistré (" + ((e && e.code) || "erreur") + ").", "late"); return false; } }
+  await writeOrg(() => {}, txt); // une ligne dans le Journal
+  return true;
+}
+function openStd(svc){
+  if(!canOrg()) return;
+  svc = svc && SVC[svc] ? svc : (S.filters.svc && SVC[S.filters.svc] ? S.filters.svc : SECTIONS[0].id);
+  const used = new Set(machines.filter(m => m.svc === svc && !isOut(m)).flatMap(m => [...m.w].filter(c => TYPES[c])));
+  const codes = Object.keys(TYPES).filter(c => used.has(c) || stdList(svc, c).length);
+  const pts = n => n + " point" + (n > 1 ? "s" : "");
+  dlg.className = "wide";
+  dlg.innerHTML = `<form class="dlg" id="std-form" method="dialog">
+    <div class="dlg-h"><div><h3 id="dlg-title">Standard préventif</h3><div class="sub">Pour chaque préventif, les points que le technicien doit faire et cocher avant de pouvoir le marquer fait. Un point par ligne.</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b">
+      <label class="field">Section<select id="std-svc">${SECTIONS.map(x => `<option value="${x.id}" ${x.id === svc ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+      ${codes.map(c => `<fieldset class="rep"><legend>${tcode(c)} ${esc(TYPES[c])} · <span class="z" data-cnt="${c}">${pts(stdList(svc, c).length)}</span></legend><textarea class="std-ta" data-code="${c}" rows="6" placeholder="Un point de contrôle par ligne, par exemple :&#10;Nettoyer la machine&#10;Vérifier la pression d'air">${esc(stdList(svc, c).join("\n"))}</textarea></fieldset>`).join("")}
+      ${codes.length ? "" : `<p class="z">Aucun préventif planifié dans cette section.</p>`}
+    </div>
+    <div class="dlg-f"><span class="z" id="std-msg"></span><span class="sp"></span><button type="button" class="btn" data-act="close">Annuler</button><button type="submit" class="btn pri">Enregistrer</button></div>
+  </form>`;
+  if(!dlg.open) dlg.showModal();
+  const lines = ta => ta.value.split("\n").map(x => x.trim().replace(/\s+/g, " ")).filter(Boolean);
+  $("#std-svc").addEventListener("change", e => openStd(e.target.value));
+  for(const ta of dlg.querySelectorAll(".std-ta")) ta.addEventListener("input", () => { const el = dlg.querySelector(`[data-cnt="${ta.dataset.code}"]`); if(el) el.textContent = pts(lines(ta).length); });
+  $("#std-form").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const entry = {};
+    for(const ta of dlg.querySelectorAll(".std-ta")){ const l = lines(ta).slice(0, 80); if(l.length) entry[ta.dataset.code] = l; }
+    const txt = `Standard préventif · ${SVC[svc].name} · ` + (Object.keys(entry).length ? Object.entries(entry).map(([c, l]) => `${c} : ${pts(l.length)}`).join(", ") : "vidé");
+    if(await writeStd(svc, entry, txt)){ closeDlg(); toast(`Standard enregistré · ${SVC[svc].name}.`); }
   });
 }
 function openSectionForm(svc){
@@ -2470,6 +2517,7 @@ function openItem(k){
     const lines = [];
     if(rec.rw) lines.push(`Reporté de S${it.w} à S${rec.rw}${rec.motif ? " — "+esc(rec.motif) : ""}`);
     if(rec.s === "fait") lines.push(`Fait le ${esc(fmtISO(rec.d))}${rec.par ? " par "+esc(rec.par) : ""}`);
+    if(rec.s === "fait" && Array.isArray(rec.chk)) lines.push(`<span title="${esc(rec.chk.join(" · "))}">Check-list validée : ${rec.chk.length} point${rec.chk.length > 1 ? "s" : ""}</span>`);
     if(rec.c) lines.push(`« ${esc(rec.c)} »`);
     if(rec.at) lines.push(`<span class="z">Saisi le ${esc(fmtStamp(rec.at))}${rec.by ? ` par <span id="by-name">…</span>` : ""}</span>`);
     hist = `<div class="hist">${lines.map(l => `<div>${l}</div>`).join("")}</div>`;
@@ -2477,6 +2525,10 @@ function openItem(k){
   const minW = Math.max(CW, it.w + 1, 1);
   const wkOpts = []; for(let w = minW; w <= NWEEKS; w++) wkOpts.push(`<option value="${w}" ${w===minW?"selected":""}>S${w} · ${esc(weekRange(w))}</option>`);
   const mode = st === "fait" ? "fait" : "fait";
+  const pts = stdList(m.svc, it.code), wasChk = !!(rec && rec.s === "fait" && Array.isArray(rec.chk));
+  const chkBox = pts.length ? `<fieldset class="rep chk" id="fm-chk"><legend>Check-list · standard ${esc(TYPES[it.code].toLowerCase())} · ${esc(SVC[m.svc].name)} · <span class="z" id="chk-n"></span></legend>
+      ${pts.map((t, i) => `<label class="chk-i"><input type="checkbox" data-chk="${i}" ${wasChk ? "checked" : ""}><span>${esc(t)}</span></label>`).join("")}
+      <div class="row-btns"><button type="button" class="btn" data-act="chkall">Tout cocher</button></div></fieldset>` : "";
   const form = can ? `
     <div class="seg" role="group" aria-label="Action"><button type="button" data-act="mode" data-v="fait" aria-pressed="true">Marquer fait</button>${wkOpts.length && st!=="fait" ? `<button type="button" data-act="mode" data-v="reporte" aria-pressed="false">Reporter</button>` : ""}</div>
     <div id="fm-fait" class="row2">
@@ -2487,12 +2539,13 @@ function openItem(k){
       <label class="field">Nouvelle semaine<select id="in-rw">${wkOpts.join("")}</select></label>
       <label class="field">Motif<select id="in-motif">${MOTIFS.map(x => `<option ${rec && rec.motif===x?"selected":""}>${esc(x)}</option>`).join("")}</select></label>
     </div>
+    ${chkBox}
     <label class="field">Observations<textarea id="in-c" placeholder="Pièces changées, anomalies constatées…">${esc(rec && rec.c || "")}</textarea></label>` : "";
   dlg.innerHTML = `<form class="dlg" id="item-form" method="dialog">
     <div class="dlg-h">${tcode(it.code)}<div><h3 id="dlg-title">${esc(m.num)} · ${esc(m.type)}</h3><div class="sub">Préventif ${esc(TYPES[it.code].toLowerCase())} · S${it.w} (${esc(weekRange(it.w))})</div></div><button type="button" class="btn x" data-act="close" aria-label="Fermer">Fermer</button></div>
     <div class="dlg-b">
       <div>${statusPill} ${it.ew !== it.w ? `<span class="pill moved">Reporté en S${it.ew}</span>` : ""}</div>
-      <dl class="kv"><dt>Service</dt><dd>${esc(SVC[m.svc].name)}${m.proj ? " · "+esc(m.proj) : ""}</dd><dt>N° de série</dt><dd class="mono">${esc(m.serie)}</dd><dt>Technicien</dt><dd>${esc(m.tech)}</dd>${m.chef ? `<dt>Responsable d'équipe</dt><dd>${esc(m.chef)}</dd>` : ""}</dl>
+      <dl class="kv"><dt>Service</dt><dd>${esc(SVC[m.svc].name)}${m.proj ? " · "+esc(m.proj) : ""}</dd><dt>N° de série</dt><dd class="mono">${esc(m.serie)}</dd>${m.chef ? `<dt>Technicien A·S·T</dt><dd>${esc(m.chef)}</dd><dt>Technicien M</dt><dd>${esc(m.tech)}</dd>` : `<dt>Technicien</dt><dd>${esc(m.tech)}</dd>`}<dt>Ce préventif</dt><dd><b>${esc(itemTech(it) || "—")}</b></dd></dl>
       ${hist}${form}
     </div>
     <div class="dlg-f">${can && rec ? `<button type="button" class="btn danger" data-act="reset" data-k="${esc(k)}">Effacer la saisie</button>` : ""}<button type="button" class="btn" data-act="machine" data-mid="${esc(m.id)}">Fiche machine</button><span class="sp"></span>${can ? `<button type="submit" class="btn ok" id="btn-save">Enregistrer</button>` : ""}</div>
@@ -2500,6 +2553,8 @@ function openItem(k){
   dlg.dataset.k = k; dlg.dataset.mode = mode;
   if(!dlg.open) dlg.showModal();
   if(rec && rec.by && S.user){ S.user.profiles([rec.by]).then(ps => { const el = $("#by-name"); if(el) el.textContent = (ps[rec.by] && ps[rec.by].name) || "un collègue"; }); }
+  for(const x of dlg.querySelectorAll("[data-chk]")) x.addEventListener("change", chkUpdate);
+  chkUpdate();
   const f = $("#item-form");
   f.addEventListener("submit", async ev => {
     ev.preventDefault();
@@ -2511,7 +2566,9 @@ function openItem(k){
       rec2 = makeRec(prev, {s:"reporte", rw: Number($("#in-rw").value), motif: $("#in-motif").value, c});
     } else {
       const d = $("#in-d").value; if(!d){ $("#in-d").focus(); return; }
-      rec2 = makeRec(prev, {s:"fait", d, par: $("#in-par").value.trim() || null, c});
+      const box = $("#fm-chk");
+      if(box && [...box.querySelectorAll("[data-chk]")].some(x => !x.checked)){ toast("Cochez tous les points de la check-list.", "late"); return; }
+      rec2 = makeRec(prev, {s:"fait", d, par: $("#in-par").value.trim() || null, c, chk: box ? pts : null});
     }
     $("#btn-save").disabled = true;
     const ok = await writeDoc(cur.m.id, semPatch(cur.w, rec2));
@@ -2523,6 +2580,16 @@ function setMode(v){
   dlg.dataset.mode = v;
   for(const b of dlg.querySelectorAll('[data-act="mode"]')) b.setAttribute("aria-pressed", String(b.dataset.v === v));
   $("#fm-fait").hidden = v !== "fait"; $("#fm-rep").hidden = v !== "reporte";
+  const c = $("#fm-chk"); if(c) c.hidden = v !== "fait";
+  chkUpdate();
+}
+function chkUpdate(){ // « Enregistrer » bloqué tant que la check-list n'est pas complète
+  const box = $("#fm-chk"), btn = $("#btn-save"); if(!box || !btn) return;
+  const all = [...box.querySelectorAll("[data-chk]")], n = all.filter(x => x.checked).length;
+  $("#chk-n").textContent = `${n} / ${all.length}`;
+  box.classList.toggle("ok", n === all.length);
+  btn.disabled = dlg.dataset.mode === "fait" && n < all.length;
+  btn.title = btn.disabled ? "Cochez tous les points de la check-list pour valider" : "";
 }
 function openMachine(mid){
   const m = byId[mid]; if(!m) return;
@@ -3141,8 +3208,11 @@ document.addEventListener("click", async ev => {
     case "machine": openMachine(el.dataset.mid); break;
     case "close": closeDlg(); break;
     case "mode": setMode(el.dataset.v); break;
+    case "chkall": for(const x of dlg.querySelectorAll("[data-chk]")) x.checked = true; chkUpdate(); break;
+    case "std": openStd(el.dataset.svc); break;
     case "quickdone": {
       const it = S.D.idx.get(el.dataset.k); if(!it || !writable()) return;
+      if(stdList(it.m.svc, it.code).length){ openItem(it.key); break; }
       el.disabled = true;
       const prev = clone(it.rec);
       const ok = await writeDoc(it.m.id, semPatch(it.w, makeRec(prev, {s:"fait", d:todayISO(), par:it.m.tech})));

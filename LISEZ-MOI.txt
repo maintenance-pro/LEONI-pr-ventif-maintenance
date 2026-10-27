@@ -86,6 +86,13 @@
    Sans technicien choisi : une page pour chaque technicien de la section.
    (Il faut internet : le module PDF se charge au premier clic.)
 
+   Standards préventifs (check-list) : Affectations > « Standards préventifs »
+   (ou bouton « Modifier » d'une section > « Standard préventif »). Pour chaque
+   section et chaque préventif (M, T, S, A, H, D) : un point par ligne. Quand
+   un technicien marque ce préventif « fait », il doit cocher tous les points
+   de la check-list ; sinon « Enregistrer » reste bloqué. Les points validés
+   sont gardés dans le suivi.
+
    Envoyer les alertes (Alertes > « Envoyer (WhatsApp / e-mail) ») :
    - rapport général, ou la liste de CHAQUE technicien, en un clic ;
    - WhatsApp ou la messagerie s'ouvre avec le message déjà écrit ;
