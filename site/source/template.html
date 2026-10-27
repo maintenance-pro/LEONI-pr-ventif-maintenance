@@ -1628,6 +1628,8 @@ function itemRow(it){
     <div class="it-act">${act}<button class="btn" data-act="item" data-k="${esc(it.key)}">Détails</button></div>
   </div>`;
 }
+const FOLD_DEF = {"al-sections": 1, "al-p-week": 1, "al-p-next": 1}; // Alertes : au départ, seuls les retards sont ouverts
+const isFolded = k => k in S.fold ? !!S.fold[k] : !!FOLD_DEF[k];
 const foldBtn = (key, folded) => `<button class="btn" data-act="fold" data-key="${esc(key)}" aria-expanded="${!folded}">${folded ? "Afficher" : "Masquer"}</button>`;
 function listPanel(id, title, note, arr, opts){
   opts = opts || {};
@@ -1645,7 +1647,7 @@ function listPanel(id, title, note, arr, opts){
     html += itemRow(it); n++;
   }
   const more = sorted.length > n ? `<div class="more"><button class="btn" data-act="expand" data-id="${id}">Afficher les ${sorted.length} interventions</button></div>` : "";
-  const fk = "al-" + id, folded = !!S.fold[fk];
+  const fk = "al-" + id, folded = isFolded(fk);
   return `<div class="panel" id="${id}">
     <div class="panel-h"><h2>${esc(title)}<span class="c">${arr.length}</span></h2><div class="tools">${note && !folded ? `<span class="note">${note}</span>` : ""}${folded ? "" : opts.tools || ""}${foldBtn(fk, folded)}</div></div>
     ${folded ? "" : `<div class="list">${html || `<div class="empty">${esc(opts.empty || "Rien à signaler.")}</div>`}</div>${more}`}
@@ -1690,7 +1692,7 @@ function renderAlertes(D){
       rows += row("tlr", `Techniciens M (${uniq(sm.map(m => m.tech)).length})`, "", b, "");
     }
   }
-  const stFold = !!S.fold["al-sections"];
+  const stFold = isFolded("al-sections");
   const svcTable = `<div class="panel"><div class="panel-h"><h2>Par section</h2>${stFold ? "" : `<span class="note">A·S·T = annuel, semestriel, trimestriel · M = mensuel · cliquez sur une section pour filtrer</span>`}<div class="tools">${foldBtn("al-sections", stFold)}</div></div>${stFold ? "" : `<div class="scroll"><table class="t"><thead><tr><th>Section / techniciens</th><th class="r">Machines</th><th class="r">En retard</th><th class="r">À faire S${CW}</th><th class="r">Faits S${CW}</th><th>Réalisation</th></tr></thead><tbody>${rows}</tbody></table></div>`}</div>`;
 
   const wkShown = S.hideDone ? wk.filter(it => it.st !== "fait") : wk;
@@ -3627,9 +3629,9 @@ document.addEventListener("click", async ev => {
     case "svc": S.filters.svc = el.dataset.svc; saveUI(); render(); break;
     case "who": S.filters.who = el.dataset.who; saveUI(); go("alertes"); break;
     case "whoplan": S.filters.who = el.dataset.who; saveUI(); go("planning"); break;
-    case "fold": { const k = el.dataset.key; if(S.fold[k]) delete S.fold[k]; else S.fold[k] = 1; saveUI(); render(); break; }
+    case "fold": { const k = el.dataset.key, f = !isFolded(k); if(f === !!FOLD_DEF[k]) delete S.fold[k]; else S.fold[k] = f ? 1 : 0; saveUI(); render(); break; }
     case "foldall": {
-      S.fold = {};
+      for(const k of Object.keys(S.fold)) if(!k.startsWith("al-")) delete S.fold[k]; // les choix d'Alertes restent
       if(el.dataset.v === "1") for(const x of SECTIONS) for(const g of ["ast", "m", "all"]) S.fold[x.id + "|" + g] = 1;
       saveUI(); render(); break;
     }

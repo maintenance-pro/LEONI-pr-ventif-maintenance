@@ -58,8 +58,9 @@
    PILOTAGE        Hub          tableau de bord : taux de réalisation, retards,
                                 charge par semaine, classement des techniciens
                    Alertes      retards, semaine en cours, semaine prochaine
-                                (bouton « Masquer » / « Afficher » sur chaque
-                                bloc pour raccourcir la page ; c'est retenu)
+                                au départ seuls les retards sont ouverts ;
+                                « Afficher » ouvre un bloc, « Masquer » le
+                                ferme (c'est retenu sur l'appareil)
                    HELPER       assistant technique IA (voir plus bas)
    ORGANISATION    Équipes      section > TL > techniciens A·S·T et techniciens M > machines
                    Affectations organigramme, erreurs à corriger, qui fait quoi
