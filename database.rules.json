@@ -63,10 +63,13 @@
       ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
       ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
       "k": {
-        ".validate": "newData.isString() && newData.val().beginsWith('sk-ant-') && newData.val().length <= 300"
+        ".validate": "newData.isString() && newData.val().length >= 20 && newData.val().length <= 300 && newData.val().matches(/^[A-Za-z0-9_.-]+$/)"
       },
       "at": {
         ".validate": "newData.isString() && newData.val().length <= 40"
+      },
+      "p": {
+        ".validate": "newData.val() === 'gemini' || newData.val() === 'claude'"
       },
       "$other": {
         ".validate": false

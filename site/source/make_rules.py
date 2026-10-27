@@ -56,8 +56,9 @@ rules = {"rules": {
     "helperKey": {  # clé de l'IA (HELPER, lecture des standards) : enregistrée par un admin, lue par les comptes autorisés
         ".read": A + member,
         ".write": A + admin,
-        "k": {".validate": "newData.isString() && newData.val().beginsWith('sk-ant-') && newData.val().length <= 300"},
+        "k": {".validate": "newData.isString() && newData.val().length >= 20 && newData.val().length <= 300 && newData.val().matches(/^[A-Za-z0-9_.-]+$/)"},  # Google AIza… ou Anthropic sk-ant-…
         "at": {".validate": "newData.isString() && newData.val().length <= 40"},
+        "p": {".validate": "newData.val() === 'gemini' || newData.val() === 'claude'"},
         "$other": {".validate": False},
     },
     "helperUse": {  # nombre de questions posées à HELPER, par personne et par jour

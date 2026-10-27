@@ -103,21 +103,27 @@
      préventif, sécurité). HELPER connaît les machines de la personne et les
      standards préventifs. Dans un préventif : « Demander à HELPER » (il
      connaît alors la machine et la check-list).
-   - Activation (manager) : Réglages > HELPER > coller la clé API Anthropic >
-     « Enregistrer la clé pour l'équipe ». La clé sert aussi à lire les
-     standards. Elle est utilisable par tous les comptes connectés : fixez une
-     limite de dépense mensuelle sur console.anthropic.com (Settings > Limits).
+   - Activation GRATUITE (manager, une seule fois) :
+     1. Réglages > HELPER > « Créer une clé gratuite (Google) » : connexion
+        avec un compte Google (Gmail), pas de carte bancaire.
+     2. « Create API key » (Créer une clé API), copier la clé (AIza…).
+     3. La coller dans « Clé de l'IA » > « Enregistrer la clé pour l'équipe ».
+     La clé sert aussi à lire les standards.
+   - Offre gratuite Google : nombre de questions limité par minute et par
+     jour (message « Limite gratuite de Google atteinte » : réessayer plus
+     tard). Google peut lire les questions pour améliorer ses produits :
+     ne pas écrire d'informations confidentielles dans HELPER.
+   - (Possible plus tard : une clé payante Anthropic sk-ant-… au même endroit ;
+     fixer alors une limite de dépense sur console.anthropic.com.)
    - Limite : 30 questions par personne et par jour. Réglages > HELPER montre
      qui pose combien de questions.
 
    Assistant IA (dans la même fenêtre « Standard préventif ») : déposez le
    document du standard (PDF, photo, Excel, Word ou texte collé) puis « Lire
-   avec l'IA ». L'IA (Claude, d'Anthropic) prépare la check-list de chaque
-   préventif ; relisez, corrigez si besoin, puis « Enregistrer ».
-   - Il faut une clé API Anthropic (console.anthropic.com > API keys), payante
-     à l'usage : quelques centimes par document. C'est la même clé que HELPER
-     (Réglages > HELPER).
-   - Le document est envoyé à Anthropic pour être lu.
+   avec l'IA ». L'IA prépare la check-list de chaque préventif ; relisez,
+   corrigez si besoin, puis « Enregistrer ».
+   - Même clé que HELPER (Réglages > HELPER).
+   - Le document est envoyé à Google (ou Anthropic) pour être lu.
 
    Envoyer les retards (Alertes > « Envoyer les retards (WhatsApp / e-mail) ») :
    - le message contient SEULEMENT les machines en retard ;
