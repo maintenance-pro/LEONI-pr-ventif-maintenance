@@ -967,7 +967,8 @@ async function initFirebase(){
     firebase.initializeApp(FIREBASE);
   }catch(e){ gate("offline"); return; }
   S.fb = {auth: firebase.auth(), rdb: firebase.database()};
-  S.fb.auth.onAuthStateChanged(u => { fbSession(u).catch(e => { console.error(e); gate("error", "Connexion à la base impossible (" + fbCode(e) + ")."); }); });
+  S.fb.auth.onAuthStateChanged(u => { fbSession(u).catch(e => { console.error(e);
+    gate("error", fbCode(e) === "permission_denied" ? "La base refuse la connexion : les règles de sécurité ne sont pas publiées (Firebase › Realtime Database › Règles)." : "Connexion à la base impossible (" + fbCode(e) + ")."); }); });
 }
 let fbSubs = [], fbData = [];
 function fbLeave(){

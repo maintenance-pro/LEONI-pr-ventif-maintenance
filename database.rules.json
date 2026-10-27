@@ -3,7 +3,7 @@
     "meta": {
       ".read": "auth != null",
       "owner": {
-        ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+        ".write": "auth != null && !data.exists() && newData.val() === auth.uid && auth.uid === 'dqDCiVUUnoUS9S1T0gRkPh6BRwt1'"
       }
     },
     "users": {

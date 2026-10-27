@@ -1,0 +1,9 @@
+{
+  "apiKey": "AIzaSyCg5bbAKWV689TuJZknbabTnsA_HKjnpi0",
+  "authDomain": "leoni-preventif.firebaseapp.com",
+  "databaseURL": "https://leoni-preventif-default-rtdb.europe-west1.firebasedatabase.app",
+  "projectId": "leoni-preventif",
+  "storageBucket": "leoni-preventif.firebasestorage.app",
+  "messagingSenderId": "262689345382",
+  "appId": "1:262689345382:web:03d9f1fb721a93213a42a7"
+}
