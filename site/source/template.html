@@ -395,6 +395,10 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
 .chk-i input:checked + span{color:var(--ink-3)}
 fieldset.chk legend .z{font-weight:600}
 fieldset.chk.ok{border-color:var(--done)}
+fieldset.ai{border-color:var(--accent);background:var(--accent-soft)}
+fieldset.ai input[type=file]{font-size:14px;max-width:100%}
+fieldset.ai textarea{width:100%;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);padding:8px 10px;resize:vertical}
+.ai-draft{border:1px solid var(--accent);background:var(--accent-soft);border-radius:var(--r);padding:8px 12px;font-size:14px}
 .std-ta{width:100%;min-height:110px;font:inherit;font-size:14px;line-height:1.45;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--ink);padding:8px 10px;resize:vertical}
 .hist{border-left:3px solid var(--line);padding:4px 0 4px 12px;font-size:14px;color:var(--ink-2);display:flex;flex-direction:column;gap:4px}
 .field{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--ink-2)}
@@ -2115,6 +2119,85 @@ function openMats(){
     if(await writeOrg(o => { setMats(o, ch); setContacts(o, chC); }, lbl)){ closeDlg(); toast(`${ch.length + chC.length} changement${ch.length + chC.length > 1 ? "s" : ""} enregistré${ch.length + chC.length > 1 ? "s" : ""}.`); }
   });
 }
+/* ---------- Assistant IA : lire un standard et préparer les check-lists ----------
+   Claude (API Anthropic) est appelé depuis le navigateur du manager, avec la clé API enregistrée sur cet appareil
+   seulement (localStorage). Le résultat est une proposition : le manager relit puis enregistre. */
+const AI_KEY = "preventif-ai-key";
+const AI_MODEL = "claude-opus-5-5";
+const AI_SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.133.0/+esm";
+const MAMMOTH_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
+let aiSdk = null;
+async function aiClient(){
+  const key = lsGet(AI_KEY, "");
+  if(!key) throw Object.assign(new Error("Clé API manquante"), {code: "no_key"});
+  if(!aiSdk) aiSdk = (await import(AI_SDK_URL)).default;
+  return new aiSdk({apiKey: key, dangerouslyAllowBrowser: true}); // la clé ne quitte cet appareil que vers l'API Anthropic
+}
+const toB64 = buf => { let x = ""; const a = new Uint8Array(buf); for(let i = 0; i < a.length; i += 0x8000) x += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(x); };
+async function aiBlocks(files, pasted){ // documents → blocs de contenu (PDF et images tels quels, Excel / Word / texte en texte)
+  const blocks = [], notes = [];
+  for(const f of files){
+    const name = f.name, ext = (name.split(".").pop() || "").toLowerCase(), buf = await f.arrayBuffer();
+    if(ext === "pdf") blocks.push({type: "document", title: name, source: {type: "base64", media_type: "application/pdf", data: toB64(buf)}});
+    else if(["png", "jpg", "jpeg", "webp", "gif"].includes(ext)){
+      if(buf.byteLength > 5e6){ notes.push(`${name} : image trop lourde (5 Mo au plus)`); continue; }
+      blocks.push({type: "image", source: {type: "base64", media_type: ext === "jpg" ? "image/jpeg" : "image/" + ext, data: toB64(buf)}});
+    }
+    else if(["xlsx", "xlsm", "xls"].includes(ext)){
+      const X = await loadXlsx(), wb = X.read(buf, {type: "array"});
+      blocks.push({type: "text", text: `Fichier Excel « ${name} » :\n` + wb.SheetNames.map(n => `--- Feuille « ${n} »\n` + X.utils.sheet_to_csv(wb.Sheets[n], {FS: " | ", blankrows: false})).join("\n")});
+    }
+    else if(ext === "docx"){
+      if(!window.mammoth) await loadScript(MAMMOTH_URL);
+      blocks.push({type: "text", text: `Document Word « ${name} » :\n` + (await mammoth.extractRawText({arrayBuffer: buf})).value});
+    }
+    else if(["txt", "csv", "md"].includes(ext)) blocks.push({type: "text", text: `Fichier « ${name} » :\n` + new TextDecoder().decode(buf)});
+    else notes.push(`${name} : format non lu (PDF, photo, Excel, Word ou texte)`);
+  }
+  if(pasted.trim()) blocks.push({type: "text", text: "Texte du standard collé par le manager :\n" + pasted.trim()});
+  return {blocks, notes};
+}
+const AI_STD_SCHEMA = {type: "object", additionalProperties: false, required: ["preventifs", "remarques"], properties: {
+  preventifs: {type: "object", additionalProperties: false, required: Object.keys(TYPES), properties: Object.fromEntries(Object.keys(TYPES).map(c => [c, {type: "array", items: {type: "string"}}]))},
+  remarques: {type: "string"}}};
+const AI_STD_SYSTEM = `Tu es ingénieur méthodes maintenance dans une usine de câblage automobile. On te donne le standard de maintenance préventive d'une section. Tu en tires, pour chaque type de préventif, la check-list que le technicien suit sur la machine : M = mensuel, T = trimestriel, S = semestriel, A = annuel, H = hebdomadaire, D = démarrage (mise en service d'une machine).
+Chaque point est une action concrète et vérifiable, en français, à l'infinitif, de 120 caractères au plus, dans l'ordre où le technicien la fait. Garde les valeurs du standard (pressions, couples, cotes, fréquences, références de pièces).
+Si le standard dit qu'un niveau comprend un autre (par exemple le trimestriel comprend le mensuel), répète ces points dans la liste du niveau supérieur : chaque liste doit se suffire à elle-même.
+Ne mets que ce qui est dans les documents et laisse vide un type qu'ils ne couvrent pas. Dans « remarques », dis en une ou deux phrases ce qui manque ou n'est pas clair ; sinon laisse une chaîne vide.`;
+async function aiReadStandard(svc, files, pasted){
+  const {blocks, notes} = await aiBlocks(files, pasted);
+  if(!blocks.length) throw Object.assign(new Error("Aucun document"), {code: "no_input"});
+  const sm = machines.filter(m => m.svc === svc && !isOut(m));
+  const codes = [...new Set(sm.flatMap(m => [...m.w].filter(c => TYPES[c])))].map(c => `${c} = ${TYPES[c]}`).join(", ");
+  const client = await aiClient();
+  const msg = await client.beta.messages.stream({
+    model: AI_MODEL, max_tokens: 16000,
+    betas: ["server-side-fallback-2026-07-01"], fallbacks: "default", // si le modèle refuse, l'API relance sur le modèle de secours
+    output_config: {effort: "medium", format: {type: "json_schema", schema: AI_STD_SCHEMA}},
+    system: AI_STD_SYSTEM,
+    messages: [{role: "user", content: [...blocks, {type: "text", text: `Section : ${SVC[svc].name}.\nTypes de machines de la section : ${uniq(sm.map(m => m.type)).slice(0, 60).join(", ") || "non précisés"}.\nPréventifs planifiés dans cette section : ${codes || "non précisés"}.\nPrépare la check-list de chaque préventif à partir du standard ci-dessus.`}]}]
+  }).finalMessage();
+  if(msg.stop_reason === "refusal") throw Object.assign(new Error("Refus"), {code: "refusal"});
+  if(msg.stop_reason === "max_tokens") throw Object.assign(new Error("Réponse coupée"), {code: "max_tokens"});
+  const out = JSON.parse(msg.content.filter(b => b.type === "text").map(b => b.text).join(""));
+  const u = msg.usage || {}, cost = ((u.input_tokens || 0) * 4 + (u.output_tokens || 0) * 20) / 1e6; // tarif Claude Opus 5.5 : 4 $ / 20 $ par million de jetons
+  return {draft: out.preventifs || {}, remarques: out.remarques || "", notes, cost};
+}
+function aiErrMsg(e){
+  const st = e && e.status, c = e && e.code;
+  if(c === "no_key") return "Entrez d'abord la clé API Anthropic (une seule fois sur cet appareil).";
+  if(c === "no_input") return "Choisissez un document ou collez le texte du standard.";
+  if(c === "refusal") return "L'IA a refusé de traiter ce document.";
+  if(c === "max_tokens") return "Le standard est trop long pour une seule lecture : envoyez-le en plusieurs parties.";
+  if(st === 401) return "Clé API refusée : vérifiez-la (bouton « Changer la clé »).";
+  if(st === 402 || (e && /credit|billing/i.test(e.message || ""))) return "Crédit API insuffisant : ajoutez du crédit sur console.anthropic.com.";
+  if(st === 413) return "Document trop lourd (32 Mo au plus par envoi).";
+  if(st === 429) return "Trop de demandes : réessayez dans une minute.";
+  if(st >= 500) return "Service IA indisponible pour le moment : réessayez plus tard.";
+  if(e instanceof SyntaxError) return "Réponse de l'IA illisible : réessayez.";
+  return "Lecture impossible : " + ((e && e.message) || "erreur") + ".";
+}
+
 /* Standards préventifs : config/std {section: {M: [points], T: [...], ...}}.
    La check-list du standard s'affiche quand on marque un préventif fait ; tous les points doivent être cochés. */
 const stdList = (svc, code) => ((((S.std || {})[svc] || {})[code]) || []).filter(x => typeof x === "string" && x.trim());
@@ -2126,18 +2209,30 @@ async function writeStd(svc, entry, txt){
   await writeOrg(() => {}, txt); // une ligne dans le Journal
   return true;
 }
-function openStd(svc){
+function openStd(svc, draft, aiInfo){ // draft : proposition de l'IA, affichée mais pas encore enregistrée
   if(!canOrg()) return;
   svc = svc && SVC[svc] ? svc : (S.filters.svc && SVC[S.filters.svc] ? S.filters.svc : SECTIONS[0].id);
   const used = new Set(machines.filter(m => m.svc === svc && !isOut(m)).flatMap(m => [...m.w].filter(c => TYPES[c])));
-  const codes = Object.keys(TYPES).filter(c => used.has(c) || stdList(svc, c).length);
+  const val = c => draft ? (draft[c] || []).filter(x => typeof x === "string" && x.trim()) : stdList(svc, c);
+  const codes = Object.keys(TYPES).filter(c => used.has(c) || val(c).length);
+  const hasKey = !!lsGet(AI_KEY, "");
+  const aiBox = `<fieldset class="rep ai"><legend>✦ Assistant IA · lire le standard</legend>
+        <p class="z" style="margin:0;font-size:13px">Déposez le document du standard de cette section (PDF, photo, Excel, Word ou texte) : l'IA prépare la check-list de chaque préventif ci-dessous. Vous relisez, corrigez si besoin, puis « Enregistrer ».</p>
+        ${hasKey ? `<div class="z" style="font-size:13px">Clé API : enregistrée sur cet appareil · <button type="button" class="lk" data-act="aikey" style="color:var(--accent)">Changer la clé</button></div>`
+          : `<label class="field">Clé API Anthropic (une seule fois sur cet appareil)<input id="ai-key" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label><div class="z" style="font-size:12.5px">Pas de clé ? <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Créer une clé sur console.anthropic.com</a> (payant à l'usage, quelques centimes par document).</div>`}
+        <input type="file" id="ai-files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.xlsx,.xlsm,.xls,.docx,.txt,.csv,.md">
+        <textarea id="ai-text" rows="3" placeholder="… ou collez ici le texte du standard"></textarea>
+        <div class="row-btns" style="align-items:center"><button type="button" class="btn pri" data-act="aistd" data-svc="${esc(svc)}">Lire avec l'IA</button><span class="z" id="ai-msg" style="font-size:13px"></span></div>
+      </fieldset>`;
+  const draftNote = draft ? `<div class="ai-draft"><b>Proposition de l'IA</b> : relisez chaque liste, corrigez si besoin, puis cliquez « Enregistrer ». Rien n'est enregistré avant.${aiInfo && aiInfo.remarques ? `<div style="margin-top:4px"><b>Remarque de l'IA :</b> ${esc(aiInfo.remarques)}</div>` : ""}${aiInfo && aiInfo.notes && aiInfo.notes.length ? `<div class="lateN" style="margin-top:4px">${aiInfo.notes.map(esc).join("<br>")}</div>` : ""}${aiInfo && aiInfo.cost != null ? `<div class="z" style="margin-top:4px;font-size:12.5px">Coût de cette lecture : environ ${aiInfo.cost < 0.01 ? "moins d'un centime" : aiInfo.cost.toFixed(2).replace(".", ",") + " $"}.</div>` : ""}</div>` : "";
   const pts = n => n + " point" + (n > 1 ? "s" : "");
   dlg.className = "wide";
   dlg.innerHTML = `<form class="dlg" id="std-form" method="dialog">
     <div class="dlg-h"><div><h3 id="dlg-title">Standard préventif</h3><div class="sub">Pour chaque préventif, les points que le technicien doit faire et cocher avant de pouvoir le marquer fait. Un point par ligne.</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
     <div class="dlg-b">
       <label class="field">Section<select id="std-svc">${SECTIONS.map(x => `<option value="${x.id}" ${x.id === svc ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
-      ${codes.map(c => `<fieldset class="rep"><legend>${tcode(c)} ${esc(TYPES[c])} · <span class="z" data-cnt="${c}">${pts(stdList(svc, c).length)}</span></legend><textarea class="std-ta" data-code="${c}" rows="6" placeholder="Un point de contrôle par ligne, par exemple :&#10;Nettoyer la machine&#10;Vérifier la pression d'air">${esc(stdList(svc, c).join("\n"))}</textarea></fieldset>`).join("")}
+      ${aiBox}${draftNote}
+      ${codes.map(c => `<fieldset class="rep"><legend>${tcode(c)} ${esc(TYPES[c])} · <span class="z" data-cnt="${c}">${pts(val(c).length)}</span></legend><textarea class="std-ta" data-code="${c}" rows="${Math.min(14, Math.max(6, val(c).length + 1))}" placeholder="Un point de contrôle par ligne, par exemple :&#10;Nettoyer la machine&#10;Vérifier la pression d'air">${esc(val(c).join("\n"))}</textarea></fieldset>`).join("")}
       ${codes.length ? "" : `<p class="z">Aucun préventif planifié dans cette section.</p>`}
     </div>
     <div class="dlg-f"><span class="z" id="std-msg"></span><span class="sp"></span><button type="button" class="btn" data-act="close">Annuler</button><button type="submit" class="btn pri">Enregistrer</button></div>
@@ -3210,6 +3305,19 @@ document.addEventListener("click", async ev => {
     case "mode": setMode(el.dataset.v); break;
     case "chkall": for(const x of dlg.querySelectorAll("[data-chk]")) x.checked = true; chkUpdate(); break;
     case "std": openStd(el.dataset.svc); break;
+    case "aikey": lsSet(AI_KEY, ""); openStd($("#std-svc") ? $("#std-svc").value : ""); break;
+    case "aistd": {
+      const msg = $("#ai-msg"), keyIn = $("#ai-key"), svc = el.dataset.svc;
+      if(keyIn && keyIn.value.trim()) lsSet(AI_KEY, keyIn.value.trim());
+      const files = [...($("#ai-files").files || [])], pasted = $("#ai-text").value;
+      el.disabled = true; msg.className = "z"; msg.textContent = "L'IA lit le standard… (jusqu'à une minute ou deux)";
+      try{
+        const r = await aiReadStandard(svc, files, pasted);
+        openStd(svc, r.draft, r);
+        toast("Proposition de l'IA prête : relisez puis « Enregistrer ».");
+      }catch(e){ console.warn("IA", e); el.disabled = false; msg.className = "lateN"; msg.textContent = aiErrMsg(e); }
+      break;
+    }
     case "quickdone": {
       const it = S.D.idx.get(el.dataset.k); if(!it || !writable()) return;
       if(stdList(it.m.svc, it.code).length){ openItem(it.key); break; }

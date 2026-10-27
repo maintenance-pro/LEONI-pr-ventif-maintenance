@@ -93,6 +93,15 @@
    de la check-list ; sinon « Enregistrer » reste bloqué. Les points validés
    sont gardés dans le suivi.
 
+   Assistant IA (dans la même fenêtre « Standard préventif ») : déposez le
+   document du standard (PDF, photo, Excel, Word ou texte collé) puis « Lire
+   avec l'IA ». L'IA (Claude, d'Anthropic) prépare la check-list de chaque
+   préventif ; relisez, corrigez si besoin, puis « Enregistrer ».
+   - Il faut une clé API Anthropic (console.anthropic.com > API keys), payante
+     à l'usage : quelques centimes par document. Elle est demandée une seule
+     fois et reste sur l'appareil (elle n'est pas enregistrée dans Firebase).
+   - Le document est envoyé à Anthropic pour être lu.
+
    Envoyer les alertes (Alertes > « Envoyer (WhatsApp / e-mail) ») :
    - rapport général, ou la liste de CHAQUE technicien, en un clic ;
    - WhatsApp ou la messagerie s'ouvre avec le message déjà écrit ;
