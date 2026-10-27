@@ -1,0 +1,76 @@
+{
+ "owner": "u_EbW4e7Ue1cZwS5gPEMLeTw",
+ "config": {
+  "main": {
+   "start": 44
+  },
+  "org": {
+   "log": [
+    {
+     "at": "2026-10-27T05:54:42.000Z",
+     "txt": "Tous les services · retour aux équipes de l'Excel (renommages *, **, *** annulés : le TL de section est maintenant un niveau à part)"
+    },
+    {
+     "at": "2026-10-26T20:04:10.621Z",
+     "txt": "Pré-assemblage · chef d'équipe renommé : ** → *"
+    },
+    {
+     "at": "2026-10-26T20:03:32.809Z",
+     "txt": "Surmoulage · machines sans chef d'équipe confiées à ***"
+    },
+    {
+     "at": "2026-10-26T20:03:20.054Z",
+     "txt": "Pré-assemblage · chef d'équipe renommé : Kamal Darib → **"
+    },
+    {
+     "at": "2026-10-26T20:03:04.079Z",
+     "txt": "Coupe · chef d'équipe renommé : Bouhaddouna Said & Hakim Ahouari → **"
+    },
+    {
+     "at": "2026-10-26T20:02:52.369Z",
+     "txt": "Coupe · chef d'équipe renommé : Oukani Driss & Gmair Abdessamad → **"
+    },
+    {
+     "at": "2026-10-26T20:02:28.290Z",
+     "txt": "Coupe · chef d'équipe renommé : Ahmimou Abdessamad & Fannich Reddouane → **"
+    },
+    {
+     "at": "2026-10-26T20:01:30.111Z",
+     "txt": "Pré-assemblage · chef d'équipe renommé : Khalid Bouyous → *"
+    },
+    {
+     "at": "2026-10-26T20:01:08.552Z",
+     "txt": "Pré-assemblage · chef d'équipe renommé : Soufiane Elfahli → *"
+    }
+   ],
+   "tl": [],
+   "tlRename": []
+  }
+ },
+ "suivi": {
+  "pre-USS03ASTRA": {
+   "etat": {
+    "at": "2026-10-27T10:52:30.225Z",
+    "by": "u_EbW4e7Ue1cZwS5gPEMLeTw",
+    "c": "Plus de préventif après S23 dans l'Excel (sortie confirmée par le manager)",
+    "k": "transfere",
+    "since": 24
+   }
+  }
+ },
+ "modifs": {
+  "u_EbW4e7Ue1cZwS5gPEMLeTw": {
+   "machines": {
+    "cou-M727": {
+     "sem": {
+      "S39": {
+       "at": "2026-10-27T10:52:30.225Z",
+       "old": "M",
+       "v": "."
+      }
+     }
+    }
+   }
+  }
+ }
+}

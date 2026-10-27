@@ -474,6 +474,20 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .row-btns{display:flex;flex-wrap:wrap;gap:8px}
 .banner.danger{border-color:var(--late);background:var(--late-soft);color:var(--ink);font-weight:600}
 .banner.danger a{color:var(--late);font-weight:700;margin-left:6px}
+.gate{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:var(--bg);overflow:auto}
+.gate-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:24px;display:flex;flex-direction:column;gap:14px;box-shadow:0 12px 32px rgba(0,0,0,.22)}
+.gate-brand{display:flex;align-items:center;gap:12px}
+.gate-brand b{display:block;font-family:var(--f-display);font-size:22px;letter-spacing:.05em}
+.gate-brand span{font-size:12.5px;color:var(--ink-3)}
+.gate-card h2{margin:0;font-family:var(--f-display);font-size:24px}
+.gate-card p{margin:0}
+.gate-msg{min-height:1.2em;color:var(--late);font-size:13.5px;font-weight:600}
+.gate-msg.ok{color:var(--done)}
+.gate-links{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13.5px}
+.gate-links .lk{color:var(--accent)}
+.gate-note{font-size:12.5px;color:var(--ink-3)}
+.gate .btn{padding:10px 14px;font-size:15px}
+.me .lk.me-out{font-size:12px;font-weight:600;color:var(--ink-3);margin-top:2px}
 @media (max-width:600px){ .erow.e-ch,.erow.e-te{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px} .erow.e-ch .e-tlsel,.erow.e-ch .z,.erow.e-te .z{grid-column:1/-1} .erow.e-te .e-gap{display:none} }
 .org-sectl{border:2px solid var(--accent);border-radius:6px;padding:8px 10px;background:var(--accent-soft)}
 .org-sectl > b{display:block;font-size:14px;overflow-wrap:anywhere}
@@ -567,10 +581,15 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 </div>
 <dialog id="dlg" aria-labelledby="dlg-title"></dialog>
 <div id="toast" class="toast" hidden role="status"></div>
+<div id="gate" class="gate" hidden></div>
 
 <script>
 "use strict";
 const PLAN = __PLAN_JSON__;
+const BUILD = __BUILD_JSON__; // version : Firebase (GitHub Pages) ou claude.ai / copie hors ligne (firebase = null)
+const FIREBASE = BUILD.firebase || null;
+const APP_URL = BUILD.appUrl || "https://claude.ai/artifact/MLPhKdrM3Rn6cdioj1UZRQ";
+const REQ_COLL = FIREBASE ? "reqs" : "modifs"; // demandes d'accès : à part dans Firebase, où modifs/<uid> contient les machines
 const YEAR = PLAN.year;
 const DEFAULT_START = 44; // semaine de mise en service du suivi
 const TYPES = {M:"Mensuel",T:"Trimestriel",S:"Semestriel",A:"Annuel",H:"Hebdomadaire",D:"Démarrage"};
@@ -620,7 +639,7 @@ const UI_KEY = "preventif-ui-"+YEAR, LOCAL_KEY = "preventif-suivi-"+YEAR;
 const ui = lsGet(UI_KEY, {});
 const S = {
   suivi:{}, config:{}, mode:"loading", loaded:false, canWrite:false, uid:null, user:null, dl:null, db:null,
-  reqs:{}, mods:{}, ov:{}, isOwner:false, editing:false, brush:"M", undo:[], fold: ui.fold || {}, org:{}, openTech:{}, showPeople: ui.showPeople !== false,
+  reqs:{}, mods:{}, ov:{}, users:{}, fb:null, isOwner:false, editing:false, brush:"M", undo:[], fold: ui.fold || {}, org:{}, openTech:{}, showPeople: ui.showPeople !== false,
   view:"hub", theme: ui.theme || "auto", meName:"", colorBy: ui.colorBy || "statut", hideDone: !!ui.hideDone, expanded:{},
   filters:{svc: ui.svc || "", who: ui.who || "", q:""}
 };
@@ -716,7 +735,8 @@ function whoName(uid){
   const c = (S.config.chefs || {})[uid] || S.reqs[uid];
   return (c && c.nom) || "Responsable";
 }
-function pendingReqs(){ if(!S.isOwner) return 0; const c = S.config.chefs || {}; return Object.keys(S.reqs).filter(u => u !== S.config.owner && !c[u]).length; }
+function pendingReqs(){ if(!S.isOwner) return 0; const c = S.config.chefs || {}; return Object.keys(S.reqs).filter(u => u !== S.config.owner && !c[u]).length + pendingAccounts(); }
+function pendingAccounts(){ return FIREBASE && S.isOwner ? Object.entries(S.users).filter(([u, p]) => u !== S.uid && p && p.ok == null).length : 0; }
 const uniq = a => [...new Set(a.filter(Boolean))].sort((x,y) => x.localeCompare(y,"fr"));
 /* Sections : config/org.secTls {svc: [{id,name,shift}]} (TL), secShifts {svc: [{id,name,shift,tl}]} (responsables shift).
    Sans saisie, les TL viennent de la colonne « tl » de l'Excel (« A & B » = deux TL). */
@@ -889,8 +909,198 @@ function historyRows(){
   return out.sort((a,b) => a.at < b.at ? 1 : a.at > b.at ? -1 : 0).slice(0, 100);
 }
 
+/* ---------- Firebase (version hébergée sur GitHub Pages) ----------
+   Realtime Database : meta/owner (le manager : premier compte connecté), users/<uid> {nom, ident, at, ok (posé par le manager)},
+   suivi/<machine>, config/main et config/org (stockés en texte JSON pour garder les listes vides), reqs/<uid>,
+   modifs/<uid>/machines/<machine>. Les règles de sécurité sont dans database.rules.json. */
+const FB_VER = "10.12.2";
+const MAT_DOMAIN = "matricule.example.com"; // un matricule devient un identifiant Firebase « 10234@matricule.example.com »
+function identEmail(v){
+  v = String(v || "").trim().toLowerCase().replace(/\s+/g, "");
+  if(v.includes("@")) return /^[^@]+@[^@]+\.[^@]+$/.test(v) ? v : "";
+  return /^[a-z0-9._-]{2,40}$/.test(v) ? v + "@" + MAT_DOMAIN : "";
+}
+const identOf = e => (e || "").endsWith("@" + MAT_DOMAIN) ? e.slice(0, -(MAT_DOMAIN.length + 1)) : (e || "");
+const fbCode = e => String((e && e.code) || "erreur").toLowerCase().replace(/^auth\//, "");
+const fbEnc = v => ({json: JSON.stringify(v), at: new Date().toISOString()});
+function authMsg(e){
+  const c = fbCode(e);
+  if(["invalid-credential", "invalid-login-credentials", "wrong-password", "user-not-found"].includes(c)) return "Identifiant ou mot de passe incorrect.";
+  return ({"email-already-in-use":"Ce compte existe déjà : connectez-vous.", "weak-password":"Mot de passe trop court : 6 caractères minimum.",
+    "invalid-email":"Identifiant invalide.", "too-many-requests":"Trop d'essais. Réessayez dans quelques minutes.",
+    "network-request-failed":"Pas de connexion internet.", "user-disabled":"Ce compte est désactivé.",
+    "operation-not-allowed":"La connexion par e-mail n'est pas activée dans Firebase (Authentication › Sign-in method › E-mail/Mot de passe)."})[c] || "Erreur : " + c;
+}
+function fbAdapter(rdb){ // même forme que la base claude.ai : doc(), collection(), onSnapshot(), set(), update()
+  const isCfg = p => p.startsWith("config/");
+  const dec = (p, v) => isCfg(p) ? (v && typeof v.json === "string" ? JSON.parse(v.json) : null) : v;
+  const flat = (o, pre, out) => { // fusion profonde, comme deepMerge : null efface
+    for(const k in o){ const v = o[k]; if(v === undefined) continue;
+      if(v && typeof v === "object" && !Array.isArray(v)){ if(Object.keys(v).length) flat(v, pre + k + "/", out); } else out[pre + k] = v; }
+    return out;
+  };
+  const guard = pr => Promise.race([pr, sleep(4000).then(() => { // hors réseau : Firebase garde l'écriture et l'envoie au retour
+    pr.catch(e => toast("Enregistrement refusé par le serveur (" + fbCode(e) + ").", "late")); })]);
+  const wrapErr = e => ({code: fbCode(e), message: e && e.message});
+  const D = p => ({
+    set: data => guard(rdb.ref(p).set(isCfg(p) ? fbEnc(data) : clone(data))).catch(e => { throw wrapErr(e); }),
+    update: patch => isCfg(p) ? Promise.reject({code:"invalid_argument"}) : guard(rdb.ref(p).update(flat(clone(patch) || {}, "", {}))).catch(e => { throw wrapErr(e); }),
+    onSnapshot: (cb, err) => { const r = rdb.ref(p), h = sn => { const v = dec(p, sn.val()); cb({exists: v != null, data: () => clone(v)}); };
+      r.on("value", h, e => err && err(wrapErr(e))); return () => r.off("value", h); },
+    collection: n => C(p + "/" + n)
+  });
+  const C = p => ({
+    doc: id => D(p + "/" + id),
+    onSnapshot: (cb, err) => { const r = rdb.ref(p), h = sn => { const docs = []; sn.forEach(c => { const v = c.val(); docs.push({id: c.key, data: () => clone(v)}); }); cb({docs}); };
+      r.on("value", h, e => err && err(wrapErr(e))); return () => r.off("value", h); }
+  });
+  return {doc: D, collection: C};
+}
+async function initFirebase(){
+  S.mode = "loading"; render(); gate("loading");
+  try{
+    if(!window.firebase){
+      const b = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
+      await loadScript(b + "firebase-app-compat.js");
+      await Promise.all([loadScript(b + "firebase-auth-compat.js"), loadScript(b + "firebase-database-compat.js")]);
+    }
+    firebase.initializeApp(FIREBASE);
+  }catch(e){ gate("offline"); return; }
+  S.fb = {auth: firebase.auth(), rdb: firebase.database()};
+  S.fb.auth.onAuthStateChanged(u => { fbSession(u).catch(e => { console.error(e); gate("error", "Connexion à la base impossible (" + fbCode(e) + ")."); }); });
+}
+let fbSubs = [], fbData = [];
+function fbLeave(){
+  fbData.forEach(f => f()); fbData = [];
+  for(const k of Object.keys(modSubs)){ modSubs[k](); delete modSubs[k]; }
+  Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}});
+  buildMachines();
+}
+async function fbSession(u){
+  fbSubs.forEach(f => f()); fbSubs = []; fbLeave();
+  if(!u){ Object.assign(S, {uid:null, isOwner:false, meName:"", meIdent:""}); render(); gate("login"); return; }
+  gate("loading");
+  const rdb = S.fb.rdb, uid = u.uid, ownerRef = rdb.ref("meta/owner");
+  let owner = (await ownerRef.once("value")).val(), claimed = false;
+  if(!owner){ // base neuve : le premier compte connecté devient le manager
+    try{ await ownerRef.set(uid); owner = uid; claimed = true; }catch(e){ owner = (await ownerRef.once("value")).val(); }
+  }
+  const meRef = rdb.ref("users/" + uid), me = (await meRef.once("value")).val() || {}, pend = S.pendingProfile;
+  S.pendingProfile = null;
+  const ident = identOf(u.email), nom = (pend && pend.nom) || me.nom || ident;
+  if(!me.nom || pend) await meRef.update({nom, ident, at: me.at || new Date().toISOString()});
+  Object.assign(S, {uid, isOwner: owner === uid, meName: nom, meIdent: ident});
+  if(claimed && BUILD.seed) await fbSeed(uid);
+  if(S.isOwner){ fbEnter(); return; }
+  const okRef = rdb.ref("users/" + uid + "/ok"), h = sn => { if(sn.val() === true) fbEnter(); else { fbLeave(); render(); gate("wait"); } };
+  okRef.on("value", h, () => gate("wait"));
+  fbSubs.push(() => okRef.off("value", h));
+}
+function fbEnter(){
+  gate(null);
+  if(S.db) return;
+  S.db = fbAdapter(S.fb.rdb);
+  S.user = {profiles: async ids => Object.fromEntries(ids.map(id => [id, {name: (S.users[id] && S.users[id].nom) || ""}])), me: async () => ({name: S.meName})};
+  S.canWrite = true; S.mode = "db"; S.loaded = false;
+  const ur = S.fb.rdb.ref("users"), uh = sn => { S.users = sn.val() || {}; scheduleRender(); };
+  ur.on("value", uh, () => {});
+  fbData.push(() => ur.off("value", uh), ...subscribeAll(S.db));
+  render();
+}
+async function fbSeed(uid){ // reprise des données de l'application claude.ai, une seule fois, dans une base vide
+  const rdb = S.fb.rdb;
+  if((await rdb.ref("config/main").once("value")).exists()) return;
+  const sd = JSON.parse(JSON.stringify(BUILD.seed).split(BUILD.seed.owner).join(uid)), now = new Date().toISOString(), up = {};
+  const org = Object.assign({}, sd.config.org || {});
+  org.log = [{at: now, txt: "Reprise des données de l'ancienne application (claude.ai) : réglages, organisation, états des machines et modifications du planning"}].concat(org.log || []);
+  up["config/main"] = fbEnc(Object.assign({}, sd.config.main || {}, {owner: uid}));
+  up["config/org"] = fbEnc(org);
+  for(const id in (sd.suivi || {})) up["suivi/" + id] = sd.suivi[id];
+  const mm = ((sd.modifs || {})[uid] || {}).machines || {};
+  for(const id in mm) up["modifs/" + uid + "/machines/" + id] = mm[id];
+  await rdb.ref().update(up);
+}
+async function setAccount(uid, on){
+  if(!FIREBASE || !S.isOwner || !uid || uid === S.uid) return;
+  const n = (S.users[uid] || {}).nom || "Ce compte";
+  try{ await S.fb.rdb.ref("users/" + uid + "/ok").set(on); toast(on ? `${n} peut maintenant ouvrir l'application.` : `Accès retiré : ${n}.`); }
+  catch(e){ toast("Non enregistré (" + fbCode(e) + ").", "late"); }
+}
+function accountsPanel(){
+  if(!FIREBASE || !S.isOwner) return "";
+  const rows = Object.entries(S.users).filter(([u, p]) => u !== S.uid && p).map(([uid, p]) => ({uid, nom: p.nom || "Sans nom", ident: p.ident || "", at: p.at || "", st: p.ok === true ? "ok" : p.ok === false ? "off" : "wait"}));
+  rows.sort((a, b) => (a.st !== "wait") - (b.st !== "wait") || a.nom.localeCompare(b.nom, "fr"));
+  const pill = st => st === "ok" ? `<span class="pill done">Autorisé</span>` : st === "off" ? `<span class="pill off">Accès retiré</span>` : `<span class="pill week">En attente</span>`;
+  const act = r => r.st === "ok" ? `<button class="btn danger" data-act="acct" data-v="0" data-uid="${esc(r.uid)}">Retirer l'accès</button>` : `<button class="btn ok" data-act="acct" data-v="1" data-uid="${esc(r.uid)}">Autoriser</button>`;
+  return `<div class="panel wide"><h2>Comptes</h2>
+    <p>Chaque personne crée son compte sur la page de connexion de l'application (e-mail ou matricule, et un mot de passe). Elle ne voit rien tant que vous ne l'avez pas autorisée. Un compte autorisé peut marquer ses préventifs faits ou reportés ; pour modifier le planning, autorisez-le aussi dans « Personnes autorisées à modifier le planning ».</p>
+    ${rows.length ? `<div class="scroll"><table class="t"><thead><tr><th>Nom</th><th>E-mail ou matricule</th><th>Créé le</th><th>Statut</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${esc(r.nom)}</b></td><td class="mono">${esc(r.ident)}</td><td class="z">${esc(r.at ? fmtStamp(r.at) : "")}</td><td>${pill(r.st)}</td><td class="r">${act(r)}</td></tr>`).join("")}</tbody></table></div>`
+      : `<p class="z">Aucun autre compte pour l'instant. Donnez le lien de l'application à vos TL et techniciens : ${esc(APP_URL)}</p>`}</div>`;
+}
+/* Page de connexion (par-dessus l'application) */
+function gate(kind, msg){
+  const g = $("#gate");
+  if(!kind){ g.hidden = true; g.innerHTML = ""; return; }
+  if(kind === "login" || kind === "signup") S.gateMode = kind;
+  const brand = `<div class="gate-brand"><span class="logo">${ico("logo")}</span><div><b>PRÉVENTIF</b><span>Maintenance · ${YEAR}</span></div></div>`;
+  let body;
+  if(kind === "loading") body = `<p class="z">Connexion…</p>`;
+  else if(kind === "offline") body = `<h2>Pas de connexion</h2><p>L'application n'a pas pu joindre Firebase. Vérifiez la connexion internet.</p><button class="btn pri" type="button" data-g="reload">Réessayer</button>`;
+  else if(kind === "error") body = `<h2>Erreur</h2><p>${esc(msg || "")}</p><button class="btn pri" type="button" data-g="reload">Réessayer</button><button class="btn" type="button" data-g="out">Se déconnecter</button>`;
+  else if(kind === "wait") body = `<h2>Compte en attente</h2><p>Bonjour <b>${esc(S.meName)}</b>. Votre compte <span class="mono">${esc(S.meIdent)}</span> est créé. Le manager maintenance doit maintenant l'autoriser (Réglages › Comptes).</p><p class="gate-note">Cette page s'ouvrira toute seule dès qu'il l'aura autorisé.</p><button class="btn" type="button" data-g="out">Se déconnecter</button>`;
+  else {
+    const up = kind === "signup";
+    body = `<form id="gate-form" style="display:contents" novalidate><h2>${up ? "Créer un compte" : "Connexion"}</h2>
+      ${up ? `<label class="field">Nom et prénom<input id="g-nom" autocomplete="name" maxlength="80"></label>` : ""}
+      <label class="field">E-mail ou matricule<input id="g-id" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+      <label class="field">Mot de passe<input id="g-pw" type="password" autocomplete="${up ? "new-password" : "current-password"}"></label>
+      ${up ? `<label class="field">Confirmer le mot de passe<input id="g-pw2" type="password" autocomplete="new-password"></label>` : ""}
+      <p class="gate-msg" id="g-msg" role="alert">${esc(msg || "")}</p>
+      <button class="btn pri" type="submit">${up ? "Créer le compte" : "Se connecter"}</button>
+      <div class="gate-links">${up ? `<button type="button" class="lk" data-g="login">J'ai déjà un compte</button>` : `<button type="button" class="lk" data-g="signup">Créer un compte</button><button type="button" class="lk" data-g="reset">Mot de passe oublié ?</button>`}</div>
+      <p class="gate-note">${up ? "Avec un matricule, tapez seulement le matricule. Le manager maintenance doit ensuite autoriser votre compte." : "Avec un matricule, tapez seulement le matricule."}</p></form>`;
+  }
+  g.innerHTML = `<div class="gate-card">${brand}${body}</div>`;
+  g.hidden = false;
+  const f = $("#g-nom") || $("#g-id"); if(f) f.focus();
+}
+document.addEventListener("submit", async ev => {
+  if(!ev.target || ev.target.id !== "gate-form") return;
+  ev.preventDefault();
+  const up = S.gateMode === "signup", msg = $("#g-msg"), btn = ev.target.querySelector("[type=submit]");
+  const say = (t, ok) => { msg.textContent = t; msg.className = "gate-msg" + (ok ? " ok" : ""); };
+  const email = identEmail($("#g-id").value), pw = $("#g-pw").value;
+  if(!email){ say("Tapez votre e-mail, ou votre matricule (lettres et chiffres)."); return; }
+  if(pw.length < 6){ say("Mot de passe : 6 caractères minimum."); return; }
+  if(up){
+    const nom = $("#g-nom").value.trim().replace(/\s+/g, " ");
+    if(!nom){ say("Tapez votre nom et prénom."); return; }
+    if(pw !== $("#g-pw2").value){ say("Les deux mots de passe sont différents."); return; }
+    S.pendingProfile = {nom};
+  }
+  btn.disabled = true; say("");
+  try{ await (up ? S.fb.auth.createUserWithEmailAndPassword(email, pw) : S.fb.auth.signInWithEmailAndPassword(email, pw)); }
+  catch(e){ S.pendingProfile = null; btn.disabled = false; say(authMsg(e)); }
+});
+document.addEventListener("click", async ev => {
+  const b = ev.target.closest && ev.target.closest("#gate [data-g]"); if(!b) return;
+  const k = b.dataset.g;
+  if(k === "login" || k === "signup") gate(k);
+  else if(k === "reload") location.reload();
+  else if(k === "out") S.fb.auth.signOut();
+  else if(k === "reset"){
+    const msg = $("#g-msg"), v = $("#g-id").value.trim(), email = identEmail(v);
+    if(!email){ msg.className = "gate-msg"; msg.textContent = "Tapez d'abord votre e-mail dans la case « E-mail ou matricule »."; return; }
+    if(email.endsWith("@" + MAT_DOMAIN)){ msg.className = "gate-msg"; msg.textContent = "Compte par matricule : demandez au manager maintenance de réinitialiser votre compte."; return; }
+    try{ await S.fb.auth.sendPasswordResetEmail(email); msg.className = "gate-msg ok"; msg.textContent = "E-mail envoyé : suivez le lien reçu pour choisir un nouveau mot de passe."; }
+    catch(e){ msg.className = "gate-msg"; msg.textContent = authMsg(e); }
+  }
+});
+
 /* ---------- Storage ---------- */
 async function initStore(){
+  if(FIREBASE) return initFirebase();
+  if(BUILD.preview){ S.mode = "readonly"; S.loaded = true; buildMachines(); render(); return; } // GitHub Pages avant que Firebase soit relié
   const hasHost = window.claude && typeof window.claude.use === "function";
   if(!hasHost){
     const o = lsGet(LOCAL_KEY, {}); S.suivi = o.suivi || {}; S.config = o.config || {}; S.mods = o.mods || {}; S.org = o.org || {};
@@ -904,13 +1114,18 @@ async function initStore(){
   if(user){ S.uid = await user.id(); S.isOwner = await user.isOwner(); try{ S.meName = (await user.me()).name || ""; }catch(e){} const c = await user.can("data.write"); S.canWrite = c !== false; }
   else S.canWrite = true;
   S.mode = S.canWrite ? "db" : "readonly";
-  db.collection("suivi").onSnapshot(snap => {
-    const o = {}; for(const d of snap.docs) o[d.id] = d.data();
-    S.suivi = o; S.loaded = true; scheduleRender();
-  }, err => { toast("Synchronisation interrompue ("+err.code+"). Rechargez la page.", "late"); });
-  db.doc("config/main").onSnapshot(snap => { S.config = snap.exists ? snap.data() : {}; syncModSubs(); buildMachines(); scheduleRender(); }, () => {});
-  db.collection("modifs").onSnapshot(snap => { const o = {}; for(const d of snap.docs) o[d.id] = d.data(); S.reqs = o; scheduleRender(); }, () => {});
-  db.doc("config/org").onSnapshot(snap => { S.org = snap.exists ? snap.data() : {}; buildMachines(); scheduleRender(); }, () => {});
+  subscribeAll(db);
+}
+function subscribeAll(db){ // renvoie les fonctions de désabonnement
+  return [
+    db.collection("suivi").onSnapshot(snap => {
+      const o = {}; for(const d of snap.docs) o[d.id] = d.data();
+      S.suivi = o; S.loaded = true; scheduleRender();
+    }, err => { toast("Synchronisation interrompue ("+err.code+"). Rechargez la page.", "late"); }),
+    db.doc("config/main").onSnapshot(snap => { S.config = snap.exists ? snap.data() : {}; syncModSubs(); buildMachines(); scheduleRender(); }, () => {}),
+    db.collection(REQ_COLL).onSnapshot(snap => { const o = {}; for(const d of snap.docs) o[d.id] = d.data(); S.reqs = o; scheduleRender(); }, () => {}),
+    db.doc("config/org").onSnapshot(snap => { S.org = snap.exists ? snap.data() : {}; buildMachines(); scheduleRender(); }, () => {})
+  ];
 }
 const modSubs = {};
 function syncModSubs(){
@@ -1079,10 +1294,12 @@ function renderPlate(){
 }
 function renderBanner(){
   const b = $("#banner"); let t = "", cls = "banner";
+  if(BUILD.moved){ b.innerHTML = `<div class="banner danger">L'application a déménagé : cette page n'est plus mise à jour. <a href="${esc(APP_URL)}" target="_blank" rel="noopener">Ouvrir la nouvelle application</a></div>`; return; }
+  if(BUILD.preview){ b.innerHTML = `<div class="banner warn"><b>Aperçu :</b> la base Firebase n'est pas encore reliée. Vous pouvez consulter le planning, mais rien n'est enregistré et les préventifs faits n'apparaissent pas ici.</div>`; return; }
   if(S.mode === "loading" || (S.mode === "db" && !S.loaded)) t = "Connexion à la base de suivi…";
   else if(S.mode === "local") { t = "COPIE HORS LIGNE : ce que vous saisissez ici reste sur cet ordinateur et n'apparaît PAS dans l'application en ligne ni chez vos équipes."; cls += " danger"; }
   else if(S.mode === "readonly") { t = "Lecture seule : vous pouvez consulter le planning, mais pas enregistrer de saisie."; cls += " warn"; }
-  b.innerHTML = t ? `<div class="${cls}">${esc(t)}${S.mode === "local" ? ` <a href="https://claude.ai/artifact/MLPhKdrM3Rn6cdioj1UZRQ" target="_blank" rel="noopener">Ouvrir l'application en ligne</a>` : ""}</div>` : "";
+  b.innerHTML = t ? `<div class="${cls}">${esc(t)}${S.mode === "local" ? ` <a href="${esc(APP_URL)}" target="_blank" rel="noopener">Ouvrir l'application en ligne</a>` : ""}</div>` : "";
 }
 
 let filtersBuilt = false;
@@ -1383,10 +1600,11 @@ function renderReglages(D){
   const total = D.items.length, recs = D.items.filter(it => it.rec).length;
   const canStart = S.mode === "local" || (writable() && S.isOwner);
   const opts = Array.from({length:NWEEKS}, (_,i) => i+1).map(w => `<option value="${w}" ${w===D.start?"selected":""}>S${w} · ${esc(weekRange(w))}</option>`).join("");
-  const canExport = S.mode === "local" || !!S.dl;
+  const canExport = S.mode === "local" || !!FIREBASE || !!S.dl;
   const storage = {local:"Navigateur de cet ordinateur (mode hors ligne)", db:"Base partagée de l'application (synchronisée)", readonly:"Base partagée — lecture seule", loading:"Connexion…"}[S.mode];
   const nAdded = machines.filter(m => m.added).length, nEdited = Object.keys(S.ov).filter(id => BASE_BY_ID[id]).length;
   $("#v-reglages").innerHTML = `<div class="settings">
+    ${accountsPanel()}
     ${chefsPanel()}
     <div class="panel"><h2>Début du suivi</h2>
       <p>Les préventifs planifiés avant cette semaine et jamais saisis sont classés « Avant le suivi » au lieu de « En retard ».</p>
@@ -1412,7 +1630,7 @@ function renderReglages(D){
     <div class="panel"><h2>Installer comme application</h2>
       <p><b>Sur PC</b> : double-cliquez le raccourci « Préventif 2026 » du bureau. Le site s'ouvre dans sa propre fenêtre, sans barre de navigateur.</p>
       <p><b>Sur téléphone</b> : ouvrez le lien, puis menu du navigateur › « Ajouter à l'écran d'accueil ».</p>
-      <dl class="kv"><dt>Lien</dt><dd class="mono">https://claude.ai/artifact/MLPhKdrM3Rn6cdioj1UZRQ</dd></dl>
+      <dl class="kv"><dt>Lien</dt><dd class="mono">${esc(APP_URL)}</dd></dl>
     </div>
   </div>`;
 }
@@ -1792,7 +2010,7 @@ function renderNav(){
 function renderSide(){
   const r = role();
   const sync = S.mode === "db" && S.loaded ? ["", "Synchronisé en direct"] : S.mode === "local" ? ["warn", "Hors ligne · cet ordinateur"] : S.mode === "readonly" ? ["warn", "Lecture seule"] : ["warn", "Connexion…"];
-  $("#me").innerHTML = `<span class="role">${esc(ROLE_LABEL[r])}</span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b><span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>`;
+  $("#me").innerHTML = `<span class="role">${esc(ROLE_LABEL[r])}</span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b><span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>${FIREBASE && S.uid ? `<button class="lk me-out" type="button" data-act="logout">Se déconnecter${S.meIdent ? " · " + esc(S.meIdent) : ""}</button>` : ""}`;
   $("#btn-theme").innerHTML = ico("theme") + esc(THEME_SHORT[S.theme] || THEME_SHORT.auto);
   $("#btn-tv").innerHTML = ico("tv") + "Mode TV";
 }
@@ -1922,6 +2140,7 @@ function knownName(uid){
   if(!uid) return "—";
   if(uid === "local") return "Vous";
   if(uid === S.config.owner) return mgrName();
+  if(S.users[uid] && S.users[uid].nom) return S.users[uid].nom;
   const c = (S.config.chefs || {})[uid] || S.reqs[uid];
   return c && c.nom ? c.nom : null;
 }
@@ -2192,7 +2411,7 @@ async function openRequest(){
   $("#rq-form").addEventListener("submit", async ev => {
     ev.preventDefault();
     const n = $("#rq-nom").value.trim(); if(!n){ $("#rq-nom").focus(); return; }
-    try{ await S.db.collection("modifs").doc(S.uid).set({nom:n, equipe:$("#rq-eq").value, at:new Date().toISOString()}); closeDlg(); toast("Demande envoyée au responsable maintenance."); }
+    try{ await S.db.collection(REQ_COLL).doc(S.uid).set({nom:n, equipe:$("#rq-eq").value, at:new Date().toISOString()}); closeDlg(); toast("Demande envoyée au responsable maintenance."); }
     catch(e){ toast("Demande non envoyée ("+((e && e.code) || "erreur")+").", "late"); }
   });
 }
@@ -2747,6 +2966,8 @@ document.addEventListener("click", async ev => {
     case "deltl": { const svc = el.dataset.svc, tl = el.dataset.tl; if(await writeOrg(o => { o.tls = o.tls || {}; o.tls[svc] = (o.tls[svc] || []).filter(x => x !== tl); }, `${SVC[svc].name} · responsable d'équipe retiré : ${tl}`)) toast("Responsable d'équipe retiré."); break; }
     case "deltech": { const svc = el.dataset.svc, tech = el.dataset.tech; if(await writeOrg(o => { o.tl = (o.tl || []).filter(r => !(r.svc === svc && r.tech === tech)); }, `${SVC[svc].name} · technicien retiré : ${tech}`)) toast("Technicien retiré."); break; }
     case "approve": setChef(el.dataset.uid, true); break;
+    case "acct": setAccount(el.dataset.uid, el.dataset.v === "1"); break;
+    case "logout": if(S.fb) S.fb.auth.signOut(); break;
     case "revoke": setChef(el.dataset.uid, false); break;
     case "savestart": { const v = Number($("#set-start").value); if(await writeConfig({start:v})) toast("Début du suivi : S"+v); break; }
   }
