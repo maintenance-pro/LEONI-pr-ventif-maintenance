@@ -487,6 +487,8 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .gate-links .lk{color:var(--accent)}
 .gate-note{font-size:12.5px;color:var(--ink-3)}
 .gate .btn{padding:10px 14px;font-size:15px}
+.gate-tabs{display:flex}.gate-tabs button{flex:1;padding:9px 10px;font-size:14px}
+#f-svc:disabled,#f-who:disabled{opacity:1;cursor:default}
 .me .lk.me-out{font-size:12px;font-weight:600;color:var(--ink-3);margin-top:2px}
 @media (max-width:600px){ .erow.e-ch,.erow.e-te{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px} .erow.e-ch .e-tlsel,.erow.e-ch .z,.erow.e-te .z{grid-column:1/-1} .erow.e-te .e-gap{display:none} }
 .org-sectl{border:2px solid var(--accent);border-radius:6px;padding:8px 10px;background:var(--accent-soft)}
@@ -759,7 +761,7 @@ function whoName(uid){
   return (c && c.nom) || "Responsable";
 }
 function pendingReqs(){ if(FIREBASE) return pendingAccounts(); if(!S.isOwner) return 0; const c = S.config.chefs || {}; return Object.keys(S.reqs).filter(u => u !== S.config.owner && !c[u]).length; }
-function pendingAccounts(){ return FIREBASE && isAdmin() ? Object.entries(S.users).filter(([u, p]) => u !== S.uid && u !== S.config.owner && p && p.ok == null).length : 0; }
+function pendingAccounts(){ return FIREBASE && isAdmin() ? Object.entries(S.users).filter(([u, p]) => u !== S.uid && u !== S.config.owner && p && !p.tech && p.ok == null).length : 0; }
 const uniq = a => [...new Set(a.filter(Boolean))].sort((x,y) => x.localeCompare(y,"fr"));
 /* Sections : config/org.secTls {svc: [{id,name,shift}]} (TL), secShifts {svc: [{id,name,shift,tl}]} (responsables shift).
    Sans saisie, les TL viennent de la colonne « tl » de l'Excel (« A & B » = deux TL). */
@@ -938,6 +940,9 @@ function historyRows(){
    modifs/<uid>/machines/<machine>. Les règles de sécurité sont dans database.rules.json. */
 const FB_VER = "10.12.2";
 const MAT_DOMAIN = "matricule.example.com"; // un matricule devient un identifiant Firebase « 10234@matricule.example.com »
+const MAT_PW = m => "preventif-" + m + "-leoni"; // mot de passe technique des comptes « matricule seul » (le technicien ne tape rien)
+const MAT_RE = /^[a-z0-9_-]{2,40}$/;
+const LOGIN_KEY = "preventif-login-tab";
 function identEmail(v){
   v = String(v || "").trim().toLowerCase().replace(/\s+/g, "");
   if(v.includes("@")) return /^[^@]+@[^@]+\.[^@]+$/.test(v) ? v : "";
@@ -994,15 +999,26 @@ async function initFirebase(){
     gate("error", fbCode(e) === "permission_denied" ? "La base refuse la connexion : les règles de sécurité ne sont pas publiées (Firebase › Realtime Database › Règles)." : "Connexion à la base impossible (" + fbCode(e) + ")."); }); });
 }
 let fbSubs = [], fbData = [];
+function fbMatsMap(){ // matricules saisis par le manager → techMats/<matricule> = {nom}
+  const o = {};
+  for(const r of ((S.org || {}).mats || [])){ if(!r || !r.name) continue; const k = matKey(r.mat || ""); if(MAT_RE.test(k)) o[k] = {nom: r.name}; }
+  return o;
+}
+function fbSyncMats(){
+  if(!FIREBASE || !S.fb || !S.db || !S.orgLoaded || S.techMats === undefined || !isAdmin()) return;
+  const want = fbMatsMap(), sig = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k] && o[k].nom]));
+  if(sig(want) !== sig(S.techMats || {})) S.fb.rdb.ref("techMats").set(Object.keys(want).length ? want : null).catch(e => console.warn("techMats", e));
+}
 function fbLeave(){
   fbData.forEach(f => f()); fbData = [];
   for(const k of Object.keys(modSubs)){ modSubs[k](); delete modSubs[k]; }
-  Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}});
+  Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}, techMats:undefined, orgLoaded:false});
   buildMachines();
 }
 async function fbSession(u){
   fbSubs.forEach(f => f()); fbSubs = []; fbLeave();
-  if(!u){ Object.assign(S, {uid:null, isOwner:false, meName:"", meIdent:""}); render(); gate("login"); return; }
+  S.techName = "";
+  if(!u){ Object.assign(S, {uid:null, isOwner:false, meName:"", meIdent:""}); render(); const nx = S.gateNext; S.gateNext = null; gate(nx ? nx.kind : loginTab(), nx && nx.msg); return; }
   gate("loading");
   const rdb = S.fb.rdb, uid = u.uid, ownerRef = rdb.ref("meta/owner");
   let owner = (await ownerRef.once("value")).val(), claimed = false;
@@ -1011,6 +1027,19 @@ async function fbSession(u){
   }
   const meRef = rdb.ref("users/" + uid), me = (await meRef.once("value")).val() || {}, pend = S.pendingProfile;
   S.pendingProfile = null;
+  const mat = (u.email || "").endsWith("@" + MAT_DOMAIN) ? identOf(u.email) : "";
+  if(mat && owner !== uid && !me.demande && me.ok !== true && !pend){ // technicien entré avec son matricule seul (pas un compte Admin / TL)
+    const created = S.matCreated; S.matCreated = false;
+    let tm = null; try{ tm = (await rdb.ref("techMats/" + mat).once("value")).val(); }catch(e){}
+    if(tm && tm.nom){
+      if(me.nom !== tm.nom || me.ident !== mat || me.tech !== true) await meRef.update({nom: tm.nom, ident: mat, tech: true, at: me.at || new Date().toISOString()});
+      Object.assign(S, {uid, isOwner: false, meName: tm.nom, meIdent: mat, meDemande: "", techName: tm.nom});
+      fbEnter(); return;
+    }
+    S.gateNext = {kind: "tech", msg: `Matricule « ${mat} » inconnu : demandez au manager maintenance de l'enregistrer (Affectations › Matricules des techniciens).`};
+    if(created){ try{ await u.delete(); return; }catch(e){} }
+    await S.fb.auth.signOut(); return;
+  }
   const ident = identOf(u.email), nom = (pend && pend.nom) || me.nom || ident;
   if(!me.nom || pend) await meRef.update(Object.assign({nom, ident, at: me.at || new Date().toISOString()}, pend && ROLES[pend.demande] ? {demande: pend.demande} : {}));
   S.meDemande = (pend && pend.demande) || me.demande || "";
@@ -1027,9 +1056,11 @@ function fbEnter(){
   S.db = fbAdapter(S.fb.rdb);
   S.user = {profiles: async ids => Object.fromEntries(ids.map(id => [id, {name: (S.users[id] && S.users[id].nom) || ""}])), me: async () => ({name: S.meName})};
   S.canWrite = true; S.mode = "db"; S.loaded = false;
-  const ur = S.fb.rdb.ref("users"), uh = sn => { S.users = sn.val() || {}; syncModSubs(); buildMachines(); scheduleRender(); }; // les rôles TL / Admin décident quelles modifications du planning s'appliquent
+  const ur = S.fb.rdb.ref("users"), uh = sn => { S.users = sn.val() || {}; syncModSubs(); buildMachines(); scheduleRender(); fbSyncMats(); }; // les rôles TL / Admin décident quelles modifications du planning s'appliquent
   ur.on("value", uh, () => {});
-  fbData.push(() => ur.off("value", uh), ...subscribeAll(S.db));
+  const tr = S.fb.rdb.ref("techMats"), th = sn => { S.techMats = sn.val() || {}; fbSyncMats(); }; // lisible par les admins seulement
+  tr.on("value", th, () => { S.techMats = undefined; });
+  fbData.push(() => ur.off("value", uh), () => tr.off("value", th), ...subscribeAll(S.db));
   render();
 }
 async function fbSeed(uid){ // reprise des données de l'application claude.ai, une seule fois, dans une base vide
@@ -1057,7 +1088,8 @@ async function setRole(uid, r){ // r : tech | tl | admin | off
 function accountsPanel(){
   if(!FIREBASE || !isAdmin()) return "";
   const own = S.config.owner;
-  const rows = Object.entries(S.users).filter(([u, p]) => u !== own && p).map(([uid, p]) => ({uid, nom: p.nom || "Sans nom", ident: p.ident || "", at: p.at || "", dem: ROLES[p.demande] ? p.demande : "", role: roleOf(uid), st: p.ok === true ? "ok" : p.ok === false ? "off" : "wait"}));
+  const nTech = Object.values(S.users).filter(p => p && p.tech).length;
+  const rows = Object.entries(S.users).filter(([u, p]) => u !== own && p && !p.tech).map(([uid, p]) => ({uid, nom: p.nom || "Sans nom", ident: p.ident || "", at: p.at || "", dem: ROLES[p.demande] ? p.demande : "", role: roleOf(uid), st: p.ok === true ? "ok" : p.ok === false ? "off" : "wait"}));
   rows.sort((a, b) => (a.st !== "wait") - (b.st !== "wait") || a.nom.localeCompare(b.nom, "fr"));
   const ownerRow = S.users[own] ? `<tr><td><b>${esc(S.users[own].nom || mgrName())}</b></td><td class="mono">${esc(S.users[own].ident || "")}</td><td class="z"></td><td><span class="pill done">Manager · Admin</span></td><td></td></tr>` : "";
   const cell = r => {
@@ -1069,7 +1101,8 @@ function accountsPanel(){
   };
   const quick = r => r.st === "wait" && r.uid !== S.uid ? `<button class="btn ok" data-act="acct" data-v="${r.dem || "tech"}" data-uid="${esc(r.uid)}">Autoriser comme ${esc(ROLES[r.dem || "tech"])}</button>` : "";
   return `<div class="panel wide"><h2>Comptes et rôles</h2>
-    <p>Chaque personne crée son compte sur la page de connexion de l'application (e-mail ou matricule, et un mot de passe) et indique le rôle qu'elle demande. Elle ne voit rien tant que vous ne l'avez pas autorisée.</p>
+    <p><b>Techniciens</b> : pas de compte ni de mot de passe. Ils choisissent l'onglet « Technicien » et tapent leur matricule ; seuls les matricules enregistrés dans <b>Affectations › Matricules des techniciens</b> peuvent entrer, et chacun ne voit que ses machines.${nTech ? ` ${nTech} technicien${nTech > 1 ? "s" : ""} déjà entré${nTech > 1 ? "s" : ""} par matricule.` : ""}</p>
+    <p><b>Admin et TL</b> : chacun crée son compte (e-mail ou matricule, et un mot de passe) et indique le rôle demandé. Il ne voit rien tant que vous ne l'avez pas autorisé.</p>
     <p><b>Admin</b> : tout, comme le manager (organisation, réglages, comptes, planning). <b>TL</b> : modifie le planning, voit Affectations et Journal. <b>Technicien</b> : consulte et marque ses préventifs faits ou reportés.</p>
     <div class="scroll"><table class="t"><thead><tr><th>Nom</th><th>E-mail ou matricule</th><th>Demande</th><th>Rôle</th><th></th></tr></thead><tbody>${ownerRow}${rows.map(r => `<tr><td><b>${esc(r.nom)}</b><div class="z">${esc(r.at ? "créé le " + fmtStamp(r.at) : "")}</div></td><td class="mono">${esc(r.ident)}</td><td>${r.dem ? esc(ROLES[r.dem]) : `<span class="z">—</span>`}</td><td>${cell(r)}</td><td class="r">${quick(r)}</td></tr>`).join("")}</tbody></table></div>
     ${rows.length ? "" : `<p class="z">Aucun autre compte pour l'instant. Donnez le lien de l'application à vos TL et techniciens : ${esc(APP_URL)}</p>`}</div>`;
@@ -1078,30 +1111,52 @@ function accountsPanel(){
 function gate(kind, msg){
   const g = $("#gate");
   if(!kind){ g.hidden = true; g.innerHTML = ""; return; }
-  if(kind === "login" || kind === "signup") S.gateMode = kind;
+  if(kind === "login" || kind === "signup" || kind === "tech") S.gateMode = kind;
+  const tabs = `<div class="seg gate-tabs" role="group" aria-label="Type de connexion"><button type="button" data-g="tech" aria-pressed="${kind === "tech"}">Technicien</button><button type="button" data-g="login" aria-pressed="${kind !== "tech"}">Admin / TL</button></div>`;
   const brand = `<div class="gate-brand"><span class="logo">${ico("logo")}</span><div><b>PRÉVENTIF</b><span>Maintenance · ${YEAR}</span></div></div>`;
   let body;
   if(kind === "loading") body = `<p class="z">Connexion…</p>`;
   else if(kind === "offline") body = `<h2>Pas de connexion</h2><p>L'application n'a pas pu joindre Firebase. Vérifiez la connexion internet.</p><button class="btn pri" type="button" data-g="reload">Réessayer</button>`;
   else if(kind === "error") body = `<h2>Erreur</h2><p>${esc(msg || "")}</p><button class="btn pri" type="button" data-g="reload">Réessayer</button><button class="btn" type="button" data-g="out">Se déconnecter</button>`;
   else if(kind === "wait") body = `<h2>Compte en attente</h2><p>Bonjour <b>${esc(S.meName)}</b>. Votre compte <span class="mono">${esc(S.meIdent)}</span>${ROLES[S.meDemande] ? ` (rôle demandé : <b>${esc(ROLES[S.meDemande])}</b>)` : ""} est créé. Le manager maintenance doit maintenant l'autoriser (Réglages › Comptes).</p><p class="gate-note">Cette page s'ouvrira toute seule dès qu'il l'aura autorisé.</p><button class="btn" type="button" data-g="out">Se déconnecter</button>`;
+  else if(kind === "tech") body = `${tabs}<form id="gate-tech" style="display:contents" novalidate><h2>Technicien</h2>
+      <label class="field">Votre matricule<input id="g-mat" inputmode="numeric" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+      <p class="gate-msg" id="g-msg" role="alert">${esc(msg || "")}</p>
+      <button class="btn pri" type="submit">Entrer</button>
+      <p class="gate-note">Tapez seulement votre matricule : vous verrez vos machines et vos préventifs.</p></form>`;
   else {
     const up = kind === "signup";
-    body = `<form id="gate-form" style="display:contents" novalidate><h2>${up ? "Créer un compte" : "Connexion"}</h2>
+    body = `${tabs}<form id="gate-form" style="display:contents" novalidate><h2>${up ? "Créer un compte (Admin ou TL)" : "Connexion Admin / TL"}</h2>
       ${up ? `<label class="field">Nom et prénom<input id="g-nom" autocomplete="name" maxlength="80"></label>
-      <label class="field">Votre rôle<select id="g-role"><option value="tech">Technicien</option><option value="tl">TL</option><option value="admin">Admin</option></select></label>` : ""}
+      <label class="field">Votre rôle<select id="g-role"><option value="tl">TL</option><option value="admin">Admin</option></select></label>` : ""}
       <label class="field">E-mail ou matricule<input id="g-id" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
       <label class="field">Mot de passe<input id="g-pw" type="password" autocomplete="${up ? "new-password" : "current-password"}"></label>
       ${up ? `<label class="field">Confirmer le mot de passe<input id="g-pw2" type="password" autocomplete="new-password"></label>` : ""}
       <p class="gate-msg" id="g-msg" role="alert">${esc(msg || "")}</p>
       <button class="btn pri" type="submit">${up ? "Créer le compte" : "Se connecter"}</button>
       <div class="gate-links">${up ? `<button type="button" class="lk" data-g="login">J'ai déjà un compte</button>` : `<button type="button" class="lk" data-g="signup">Créer un compte</button><button type="button" class="lk" data-g="reset">Mot de passe oublié ?</button>`}</div>
-      <p class="gate-note">${up ? "Avec un matricule, tapez seulement le matricule. Le manager maintenance doit ensuite autoriser votre compte." : "Avec un matricule, tapez seulement le matricule."}</p></form>`;
+      <p class="gate-note">${up ? "Le manager maintenance doit ensuite autoriser votre compte. Techniciens : pas de compte à créer, utilisez l'onglet « Technicien »." : "Avec un matricule, tapez seulement le matricule."}</p></form>`;
   }
   g.innerHTML = `<div class="gate-card">${brand}${body}</div>`;
   g.hidden = false;
-  const f = $("#g-nom") || $("#g-id"); if(f) f.focus();
+  const f = $("#g-mat") || $("#g-nom") || $("#g-id"); if(f) f.focus();
 }
+function loginTab(){ return lsGet(LOGIN_KEY, "tech") === "login" ? "login" : "tech"; }
+document.addEventListener("submit", async ev => {
+  if(!ev.target || ev.target.id !== "gate-tech") return;
+  ev.preventDefault();
+  const msg = $("#g-msg"), btn = ev.target.querySelector("[type=submit]"), say = t => { msg.textContent = t; msg.className = "gate-msg"; };
+  const mat = String($("#g-mat").value || "").trim().toLowerCase().replace(/\s+/g, "");
+  if(!MAT_RE.test(mat)){ say("Tapez votre matricule (chiffres et lettres)."); return; }
+  btn.disabled = true; say("");
+  const auth = S.fb.auth, email = mat + "@" + MAT_DOMAIN, pw = MAT_PW(mat);
+  try{ await auth.signInWithEmailAndPassword(email, pw); }
+  catch(e){
+    if(!["invalid-credential", "invalid-login-credentials", "user-not-found", "wrong-password"].includes(fbCode(e))){ btn.disabled = false; say(authMsg(e)); return; }
+    try{ S.matCreated = true; await auth.createUserWithEmailAndPassword(email, pw); } // premier passage de ce matricule
+    catch(e2){ S.matCreated = false; btn.disabled = false; say(fbCode(e2) === "email-already-in-use" ? "Ce matricule a un compte avec mot de passe : utilisez l'onglet « Admin / TL »." : authMsg(e2)); }
+  }
+});
 document.addEventListener("submit", async ev => {
   if(!ev.target || ev.target.id !== "gate-form") return;
   ev.preventDefault();
@@ -1123,7 +1178,7 @@ document.addEventListener("submit", async ev => {
 document.addEventListener("click", async ev => {
   const b = ev.target.closest && ev.target.closest("#gate [data-g]"); if(!b) return;
   const k = b.dataset.g;
-  if(k === "login" || k === "signup") gate(k);
+  if(k === "login" || k === "signup" || k === "tech"){ if(k !== "signup") lsSet(LOGIN_KEY, k); gate(k); }
   else if(k === "reload") location.reload();
   else if(k === "out") S.fb.auth.signOut();
   else if(k === "reset"){
@@ -1162,7 +1217,7 @@ function subscribeAll(db){ // renvoie les fonctions de désabonnement
     }, err => { toast("Synchronisation interrompue ("+err.code+"). Rechargez la page.", "late"); }),
     db.doc("config/main").onSnapshot(snap => { S.config = snap.exists ? snap.data() : {}; syncModSubs(); buildMachines(); scheduleRender(); }, () => {}),
     db.collection(REQ_COLL).onSnapshot(snap => { const o = {}; for(const d of snap.docs) o[d.id] = d.data(); S.reqs = o; scheduleRender(); }, () => {}),
-    db.doc("config/org").onSnapshot(snap => { S.org = snap.exists ? snap.data() : {}; buildMachines(); scheduleRender(); }, () => {})
+    db.doc("config/org").onSnapshot(snap => { S.org = snap.exists ? snap.data() : {}; S.orgLoaded = true; buildMachines(); scheduleRender(); if(FIREBASE) fbSyncMats(); }, () => {})
   ];
 }
 const modSubs = {};
@@ -1344,6 +1399,7 @@ let filtersBuilt = false;
 let filtersSvc = null;
 function syncFilters(){
   const fs = $("#f-svc"), fw = $("#f-who");
+  if(S.techName){ S.filters.svc = ""; S.filters.who = S.techName; } // technicien : seulement ses machines
   if(!filtersBuilt || filtersSvc !== S.filters.svc){
     fs.innerHTML = `<option value="">Tous les services</option>` + SECTIONS.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
     const svcs = SECTIONS.filter(x => !S.filters.svc || x.id === S.filters.svc);
@@ -1357,11 +1413,13 @@ function syncFilters(){
       if(techs.length) html += `<optgroup label="${esc(x.name)} · techniciens${chefs.length ? " M" : ""}">${techs.map(n => `<option value="${esc(n)}">${esc(withMat(n))}</option>`).join("")}</optgroup>`;
       chefs.forEach(n => valid.add(n)); techs.forEach(n => valid.add(n));
     }
+    if(S.techName && !valid.has(S.techName)){ html += `<option value="${esc(S.techName)}">${esc(S.techName)}</option>`; valid.add(S.techName); }
     fw.innerHTML = html;
     filtersBuilt = true; filtersSvc = S.filters.svc;
     if(!valid.has(S.filters.who)){ S.filters.who = ""; saveUI(); } // la personne choisie n'est pas dans ce service
   }
   fs.value = S.filters.svc; fw.value = S.filters.who;
+  fs.disabled = fw.disabled = !!S.techName;
   if(fw.value !== S.filters.who){ S.filters.who = ""; fw.value = ""; }
   if($("#f-q").value !== S.filters.q) $("#f-q").value = S.filters.q;
 }

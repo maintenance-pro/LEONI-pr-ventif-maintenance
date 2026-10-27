@@ -14,7 +14,18 @@
    « L'application a déménagé ».
 
 2) COMPTES ET RÔLES
-   Chacun se connecte avec son e-mail OU son matricule, et un mot de passe.
+   TECHNICIENS : pas de compte, pas de mot de passe.
+   - Onglet « Technicien » de la page de connexion : taper son matricule,
+     puis « Entrer ». Le technicien ne voit que SES machines (technicien
+     A·S·T ou M) et marque ses préventifs faits ou reportés.
+   - Seuls les matricules enregistrés par le manager peuvent entrer :
+     Affectations > « Matricules des techniciens » (ou la colonne Matricule
+     du bouton « Modifier » d'une section). Retirer un matricule = le
+     technicien ne peut plus entrer.
+   - Attention : quiconque connaît un matricule peut entrer à la place de
+     ce technicien. Le Journal montre chaque saisie.
+
+   ADMIN ET TL : onglet « Admin / TL », e-mail OU matricule, et un mot de passe.
    - Nouvelle personne : « Créer un compte » sur la page de connexion,
      avec son nom, le rôle demandé, son e-mail ou matricule, un mot de passe.
    - Le manager (ou un Admin) l'autorise dans Réglages > Comptes et rôles :

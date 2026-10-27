@@ -7,7 +7,7 @@
       }
     },
     "users": {
-      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         "nom": {
@@ -26,6 +26,10 @@
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.val() === 'tech' || newData.val() === 'tl' || newData.val() === 'admin'"
         },
+        "tech": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isBoolean()"
+        },
         "ok": {
           ".write": "auth != null && auth.uid !== $uid && $uid !== root.child('meta/owner').val() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
           ".validate": "newData.isBoolean()"
@@ -43,24 +47,32 @@
         }
       }
     },
+    "techMats": {
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
+      ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
+      "$mat": {
+        ".read": "auth != null && auth.token.email === $mat + '@matricule.example.com'",
+        ".validate": "newData.hasChildren(['nom']) && newData.child('nom').isString() && newData.child('nom').val().length <= 80"
+      }
+    },
     "suivi": {
-      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
       "$mid": {
-        ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)"
+        ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))"
       }
     },
     "config": {
-      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
       ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))"
     },
     "reqs": {
-      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
       "$uid": {
         ".write": "auth != null && auth.uid === $uid && root.child('users/' + auth.uid + '/ok').val() === true"
       }
     },
     "modifs": {
-      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
       "$uid": {
         ".write": "auth != null && auth.uid === $uid && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))"
       }
