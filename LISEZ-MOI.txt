@@ -3,16 +3,38 @@
 
 1) L'APPLICATION (à utiliser tous les jours)
    Double-cliquez sur « Préventif 2026 » (sur le bureau ou dans ce dossier).
-   L'application s'ouvre dans sa propre fenêtre (Microsoft Edge, sans barre
-   de navigateur). Connectez-vous avec votre compte Claude si on vous le demande.
-   Adresse : https://claude.ai/artifact/MLPhKdrM3Rn6cdioj1UZRQ
+   L'application s'ouvre dans sa propre fenêtre (Microsoft Edge).
+   Adresse : https://maintenance-pro.github.io/LEONI-pr-ventif-maintenance/
    Sur téléphone : ouvrez l'adresse, puis menu du navigateur >
    « Ajouter à l'écran d'accueil ».
 
-   Tout ce qui est saisi est enregistré en ligne et partagé avec les
-   personnes à qui vous donnez accès (bouton « Partager » du site).
+   Les données sont enregistrées dans Firebase (projet « leoni-preventif »,
+   Realtime Database en Europe) et partagées en direct avec toute l'équipe.
+   L'ancienne adresse claude.ai n'est plus mise à jour : elle affiche
+   « L'application a déménagé ».
 
-   Menu (à gauche) :
+2) COMPTES ET RÔLES
+   Chacun se connecte avec son e-mail OU son matricule, et un mot de passe.
+   - Nouvelle personne : « Créer un compte » sur la page de connexion,
+     avec son nom, le rôle demandé, son e-mail ou matricule, un mot de passe.
+   - Le manager (ou un Admin) l'autorise dans Réglages > Comptes et rôles :
+     bouton « Autoriser comme … », ou la liste « Rôle » pour changer.
+     « Accès retiré » bloque le compte.
+
+   Les 3 rôles :
+   - Admin      : tout, comme le manager (organisation, réglages, comptes,
+                  planning).
+   - TL         : modifie le planning, voit Affectations et Journal.
+   - Technicien : consulte et marque ses préventifs faits ou reportés.
+   Le manager maintenance (bilalnahil05@gmail.com) est Admin pour toujours :
+   personne ne peut lui retirer ce rôle.
+
+   Mot de passe oublié :
+   - compte par e-mail : lien « Mot de passe oublié ? » sur la page de connexion ;
+   - compte par matricule : supprimer le compte dans la console Firebase
+     (Authentication > Utilisateurs), puis la personne recrée son compte.
+
+3) LE MENU
    PILOTAGE        Hub          tableau de bord : taux de réalisation, retards,
                                 charge par semaine, classement des techniciens
                    Alertes      retards, semaine en cours, semaine prochaine
@@ -21,44 +43,45 @@
    MAINTENANCE     Planning     grille des 53 semaines (+ « Modifier le planning »)
                    Machines     liste du parc
    ADMINISTRATION  Journal      toutes les actions : saisies, modifications
-                   Réglages     personnes autorisées, export, affichage
+                   Réglages     comptes et rôles, export, affichage
 
-   Rôles des techniciens (comme dans l'Excel) :
+   Rôles des techniciens dans le planning (comme dans l'Excel) :
    - Technicien A·S·T : préventifs Annuels, Semestriels, Trimestriels
    - Technicien M     : préventifs Mensuels (et hebdomadaires, démarrage)
    - Sans technicien A·S·T (Cellule, Surmoulage), le technicien M fait tout.
 
    Matricules : bouton « Matricules » (Équipes) ou « Matricules des
    techniciens » (Affectations), ou colonne « Matricule » dans le bouton
-   « Modifier » de chaque section. Tapez le matricule puis « Enregistrer ». Ensuite, taper un matricule dans la recherche (en haut)
-   choisit directement la personne et affiche son planning.
+   « Modifier » de chaque section. Tapez le matricule puis « Enregistrer ».
+   Ensuite, taper un matricule dans la recherche (en haut) choisit
+   directement la personne et affiche son planning.
 
    Imprimer la fiche de la semaine d'un technicien (papier A4) :
    1. Planning : choisissez la section puis le technicien dans « Responsable ».
    2. Cliquez « Imprimer la semaine (A4) » (aussi dans Alertes > Cette semaine).
    3. Choisissez la semaine, cochez « retards » / « semaine suivante » si besoin,
-      puis « Télécharger la fiche A4 (PDF) » et acceptez l'enregistrement.
+      puis « Télécharger la fiche A4 (PDF) ».
    4. Ouvrez le PDF et imprimez-le (Ctrl+P). Une page par technicien, avec les
       colonnes Statut / Fait le / Visa / Observations à remplir à la main.
    Sans technicien choisi : une page pour chaque technicien de la section.
    (Il faut internet : le module PDF se charge au premier clic.)
 
-   Le menu dépend du rôle : Manager maintenance (tout), Responsable autorisé
-   (peut modifier le planning), Technicien, Lecture seule.
-   Bas du menu : thème (sombre / atelier clair / auto) et « Mode TV »
-   (plein écran pour un écran d'atelier, Échap pour quitter).
-   Touche « / » : rechercher une machine.
+   Bas du menu : thème (sombre / atelier clair / auto), « Mode TV »
+   (plein écran pour un écran d'atelier, Échap pour quitter), Se déconnecter.
+   Touche « / » : rechercher une machine ou un matricule.
 
-2) LE DOSSIER « site »
+4) LE DOSSIER « site »
    - Preventif-2026-hors-ligne.html : copie de secours qui fonctionne sans
      internet (double-clic). ATTENTION : ce qui est saisi dans cette copie
      reste dans le navigateur de cet ordinateur et n'apparaît PAS dans
      l'application en ligne. À utiliser seulement en cas de coupure internet.
    - preventif.ico : icône de l'application.
-   - source\ : fichiers qui servent à refaire le site à partir d'un
-     nouveau fichier Excel (par exemple le planning 2027).
-     Ne pas les modifier ni les supprimer.
+   - source\ : fichiers qui servent à refaire le site (par exemple pour le
+     planning 2027) et la configuration Firebase. Ne pas les modifier ni les
+     supprimer.
+   - database.rules.json (dans ce dossier) : règles de sécurité de la base
+     Firebase.
 
-3) LE FICHIER EXCEL
+5) LE FICHIER EXCEL
    L'application ne modifie jamais le fichier Excel. Les changements faits
    dans l'application sont visibles dans le Journal.
