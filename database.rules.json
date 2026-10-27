@@ -59,6 +59,29 @@
         ".validate": "newData.hasChildren(['nom']) && newData.child('nom').isString() && newData.child('nom').val().length <= 80"
       }
     },
+    "helperKey": {
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
+      ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
+      "k": {
+        ".validate": "newData.isString() && newData.val().beginsWith('sk-ant-') && newData.val().length <= 300"
+      },
+      "at": {
+        ".validate": "newData.isString() && newData.val().length <= 40"
+      },
+      "$other": {
+        ".validate": false
+      }
+    },
+    "helperUse": {
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$day": {
+          ".write": "auth != null && auth.uid === $uid && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000 && $day.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+        }
+      }
+    },
     "suivi": {
       ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true || (auth.token.email != null && auth.token.email.endsWith('@matricule.example.com') && root.child('techMats/' + auth.token.email.replace('@matricule.example.com', '')).exists()))",
       "$mid": {

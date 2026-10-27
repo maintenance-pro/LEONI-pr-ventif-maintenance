@@ -93,13 +93,26 @@
    de la check-list ; sinon « Enregistrer » reste bloqué. Les points validés
    sont gardés dans le suivi.
 
+   HELPER (assistant technique IA, pour toute l'équipe) :
+   - Bouton « HELPER » en bas à droite (PC et téléphone) : chaque technicien,
+     TL ou Admin peut lui poser une question technique (réglage, panne,
+     préventif, sécurité). HELPER connaît les machines de la personne et les
+     standards préventifs. Dans un préventif : « Demander à HELPER » (il
+     connaît alors la machine et la check-list).
+   - Activation (manager) : Réglages > HELPER > coller la clé API Anthropic >
+     « Enregistrer la clé pour l'équipe ». La clé sert aussi à lire les
+     standards. Elle est utilisable par tous les comptes connectés : fixez une
+     limite de dépense mensuelle sur console.anthropic.com (Settings > Limits).
+   - Limite : 30 questions par personne et par jour. Réglages > HELPER montre
+     qui pose combien de questions.
+
    Assistant IA (dans la même fenêtre « Standard préventif ») : déposez le
    document du standard (PDF, photo, Excel, Word ou texte collé) puis « Lire
    avec l'IA ». L'IA (Claude, d'Anthropic) prépare la check-list de chaque
    préventif ; relisez, corrigez si besoin, puis « Enregistrer ».
    - Il faut une clé API Anthropic (console.anthropic.com > API keys), payante
-     à l'usage : quelques centimes par document. Elle est demandée une seule
-     fois et reste sur l'appareil (elle n'est pas enregistrée dans Firebase).
+     à l'usage : quelques centimes par document. C'est la même clé que HELPER
+     (Réglages > HELPER).
    - Le document est envoyé à Anthropic pour être lu.
 
    Envoyer les alertes (Alertes > « Envoyer (WhatsApp / e-mail) ») :

@@ -53,6 +53,23 @@ rules = {"rules": {
             ".validate": "newData.hasChildren(['nom']) && newData.child('nom').isString() && newData.child('nom').val().length <= 80",
         },
     },
+    "helperKey": {  # clé de l'IA (HELPER, lecture des standards) : enregistrée par un admin, lue par les comptes autorisés
+        ".read": A + member,
+        ".write": A + admin,
+        "k": {".validate": "newData.isString() && newData.val().beginsWith('sk-ant-') && newData.val().length <= 300"},
+        "at": {".validate": "newData.isString() && newData.val().length <= 40"},
+        "$other": {".validate": False},
+    },
+    "helperUse": {  # nombre de questions posées à HELPER, par personne et par jour
+        ".read": A + admin,
+        "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            "$day": {
+                ".write": f"auth != null && auth.uid === $uid && {member}",
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000 && $day.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)",
+            },
+        },
+    },
     "suivi": {".read": A + member, "$mid": {".write": A + member}},
     "config": {".read": A + member, ".write": A + admin},
     "reqs": {".read": A + member, "$uid": {".write": f"auth != null && auth.uid === $uid && {ok}"}},

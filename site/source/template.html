@@ -396,6 +396,27 @@ dl.kv dd{margin:0;overflow-wrap:anywhere}
 fieldset.chk legend .z{font-weight:600}
 fieldset.chk.ok{border-color:var(--done)}
 fieldset.ai{border-color:var(--accent);background:var(--accent-soft)}
+.hp-fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:30;display:flex;align-items:center;gap:8px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:12px 18px;font-weight:700;font-size:15px;letter-spacing:.03em;box-shadow:0 6px 18px rgba(0,0,0,.28);cursor:pointer}
+.hp-fab svg{width:20px;height:20px}
+.hp-fab[hidden]{display:none}
+.hp{position:fixed;top:0;right:0;bottom:0;width:min(440px,100vw);z-index:35;background:var(--surface);color:var(--ink);border-left:1px solid var(--line);box-shadow:-8px 0 26px rgba(0,0,0,.22);display:flex;flex-direction:column}
+.hp[hidden]{display:none}
+.hp-h{display:flex;align-items:center;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top,0px));border-bottom:1px solid var(--line)}
+.hp-h b{display:block;font-family:var(--f-display);font-size:22px;letter-spacing:.05em}
+.hp-h .sub{font-size:12px;color:var(--ink-3)}
+.hp-h .btn{padding:6px 10px}
+.hp-ctx{margin:10px 14px 0;padding:6px 10px;border-radius:8px;background:var(--accent-soft);border:1px solid var(--accent);font-size:13px}
+.hp-msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.hp-m{max-width:90%;padding:9px 12px;border-radius:12px;font-size:14.5px;line-height:1.45;overflow-wrap:anywhere}
+.hp-m p{margin:0 0 6px}.hp-m p:last-child{margin:0}
+.hp-m ul,.hp-m ol{margin:4px 0 6px;padding-left:20px}
+.hp-m.u{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:4px}
+.hp-m.a{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line);border-bottom-left-radius:4px}
+.hp-m.err{border-color:var(--late);color:var(--late)}
+.hp-f{display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.hp-f textarea{flex:1;resize:none;min-height:46px;max-height:150px;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);padding:10px}
+.hp-f .btn{align-self:flex-end;padding:11px 14px}
+.hp-note{font-size:11.5px;color:var(--ink-3);padding:0 14px 6px}
 fieldset.ai input[type=file]{font-size:14px;max-width:100%}
 fieldset.ai textarea{width:100%;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);padding:8px 10px;resize:vertical}
 .ai-draft{border:1px solid var(--accent);background:var(--accent-soft);border-radius:var(--r);padding:8px 12px;font-size:14px}
@@ -626,6 +647,8 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 <dialog id="dlg" aria-labelledby="dlg-title"></dialog>
 <div id="toast" class="toast" hidden role="status"></div>
 <div id="gate" class="gate" hidden></div>
+<button class="hp-fab" id="hp-fab" type="button" data-act="helper" hidden aria-label="Ouvrir HELPER, l'assistant technique"></button>
+<aside class="hp" id="hp" hidden aria-label="HELPER, assistant technique"></aside>
 
 <script>
 "use strict";
@@ -1074,6 +1097,7 @@ function fbLeave(){
   for(const k of Object.keys(modSubs)){ modSubs[k](); delete modSubs[k]; }
   Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}, std:{}, techMats:undefined, orgLoaded:false});
   NT.late = null; NT.pend = null;
+  Object.assign(S, {aiKey: undefined, helperAt: "", helperUse: {}}); HP.open = false; HP.busy = false; HP.ctx = null; HP.loadedFor = null;
   buildMachines();
 }
 async function fbSession(u){
@@ -1121,7 +1145,11 @@ function fbEnter(){
   ur.on("value", uh, () => {});
   const tr = S.fb.rdb.ref("techMats"), th = sn => { S.techMats = sn.val() || {}; fbSyncMats(); }; // lisible par les admins seulement
   tr.on("value", th, () => { S.techMats = undefined; });
-  fbData.push(() => ur.off("value", uh), () => tr.off("value", th), ...subscribeAll(S.db));
+  const hr = S.fb.rdb.ref("helperKey/at"), hh = sn => { S.helperAt = sn.val() || ""; scheduleRender(); }; // la clé elle-même n'est lue qu'au besoin
+  hr.on("value", hh, () => {});
+  const hu = S.fb.rdb.ref("helperUse"), hz = sn => { S.helperUse = sn.val() || {}; if(S.view === "reglages") scheduleRender(); }; // admins seulement
+  hu.on("value", hz, () => {});
+  fbData.push(() => ur.off("value", uh), () => tr.off("value", th), () => hr.off("value", hh), () => hu.off("value", hz), ...subscribeAll(S.db));
   render();
 }
 async function fbSeed(uid){ // reprise des données de l'application claude.ai, une seule fois, dans une base vide
@@ -1528,6 +1556,9 @@ function render(){
   renderNav(); renderPlate(D); renderBanner(); syncFilters(); renderSide(); renderTitle();
   for(const sec of document.querySelectorAll("section[data-view]")) sec.hidden = sec.dataset.view !== S.view;
   if(notifOn()) notifyCheck();
+  { const fab = $("#hp-fab"), ok = helperAvailable(); // après une déconnexion, le panneau et la conversation disparaissent
+    if((!ok && HP.open) || (!HP.open && !$("#hp").hidden)) renderHelper();
+    fab.innerHTML = ico("helper") + "HELPER"; fab.hidden = !ok || HP.open; }
   for(const t of document.querySelectorAll(".tab")) t.setAttribute("aria-selected", String(t.dataset.go === S.view));
   setCnt("cnt-late", D.items.filter(it => it.st === "retard" && matchIt(it)).length);
   setCnt("cnt-req", pendingReqs());
@@ -1862,6 +1893,7 @@ function renderReglages(D){
   const nAdded = machines.filter(m => m.added).length, nEdited = Object.keys(S.ov).filter(id => BASE_BY_ID[id]).length;
   $("#v-reglages").innerHTML = `<div class="settings">
     ${accountsPanel()}
+    ${helperPanel()}
     ${chefsPanel()}
     <div class="panel"><h2>Début du suivi</h2>
       <p>Les préventifs planifiés avant cette semaine et jamais saisis sont classés « Avant le suivi » au lieu de « En retard ».</p>
@@ -2127,10 +2159,28 @@ const AI_MODEL = "claude-opus-5-5";
 const AI_SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.133.0/+esm";
 const MAMMOTH_URL = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
 let aiSdk = null;
+async function aiKeyGet(){ // version en ligne : clé enregistrée par le manager pour l'équipe ; sinon clé de cet appareil
+  if(FIREBASE && S.fb && S.uid){
+    if(S.aiKey === undefined){ try{ S.aiKey = (await S.fb.rdb.ref("helperKey/k").once("value")).val() || ""; }catch(e){ S.aiKey = ""; } }
+    if(S.aiKey) return S.aiKey;
+  }
+  return lsGet(AI_KEY, "");
+}
+async function setHelperKey(k){
+  if(!FIREBASE || !isAdmin()) return false;
+  try{ await S.fb.rdb.ref("helperKey").set(k ? {k, at: new Date().toISOString()} : null); S.aiKey = k || ""; return true; }
+  catch(e){ toast("Clé non enregistrée (" + fbCode(e) + ").", "late"); return false; }
+}
 async function aiClient(){
-  const key = lsGet(AI_KEY, "");
+  const key = await aiKeyGet();
   if(!key) throw Object.assign(new Error("Clé API manquante"), {code: "no_key"});
-  if(!aiSdk) aiSdk = (await import(AI_SDK_URL)).default;
+  if(!aiSdk){
+    try{ aiSdk = (await import(AI_SDK_URL)).default; }
+    catch(e){ // réseau coupé un instant : un nouvel essai (adresse différente, car le navigateur garde l'échec en mémoire)
+      try{ aiSdk = (await import(AI_SDK_URL + "?r=" + Date.now())).default; }
+      catch(e2){ throw Object.assign(new Error("Module IA non chargé"), {code: "offline"}); }
+    }
+  }
   return new aiSdk({apiKey: key, dangerouslyAllowBrowser: true}); // la clé ne quitte cet appareil que vers l'API Anthropic
 }
 const toB64 = buf => { let x = ""; const a = new Uint8Array(buf); for(let i = 0; i < a.length; i += 0x8000) x += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(x); };
@@ -2185,8 +2235,9 @@ async function aiReadStandard(svc, files, pasted){
 }
 function aiErrMsg(e){
   const st = e && e.status, c = e && e.code;
-  if(c === "no_key") return "Entrez d'abord la clé API Anthropic (une seule fois sur cet appareil).";
+  if(c === "no_key") return FIREBASE ? "Entrez d'abord la clé API Anthropic (elle sera enregistrée pour toute l'équipe)." : "Entrez d'abord la clé API Anthropic (une seule fois sur cet appareil).";
   if(c === "no_input") return "Choisissez un document ou collez le texte du standard.";
+  if(c === "offline" || (e instanceof TypeError && /fetch|network/i.test(e.message || ""))) return "Connexion à l'IA impossible : vérifiez internet puis réessayez.";
   if(c === "refusal") return "L'IA a refusé de traiter ce document.";
   if(c === "max_tokens") return "Le standard est trop long pour une seule lecture : envoyez-le en plusieurs parties.";
   if(st === 401) return "Clé API refusée : vérifiez-la (bouton « Changer la clé »).";
@@ -2196,6 +2247,162 @@ function aiErrMsg(e){
   if(st >= 500) return "Service IA indisponible pour le moment : réessayez plus tard.";
   if(e instanceof SyntaxError) return "Réponse de l'IA illisible : réessayez.";
   return "Lecture impossible : " + ((e && e.message) || "erreur") + ".";
+}
+
+/* ---------- HELPER : l'assistant technique de l'équipe (Claude) ----------
+   Ouvert par le bouton « HELPER » (ou « Demander à HELPER » dans un préventif). Contexte envoyé : la personne, ses machines,
+   les standards préventifs de ses sections, la machine et la check-list du préventif. Conversation gardée sur l'appareil. */
+const HELPER_DAY_MAX = 30;
+const HELPER_SYSTEM = `Tu es HELPER, l'assistant technique de l'équipe maintenance d'une usine de câblage automobile (LEONI) : coupe (machines Komax), cellule de sertissage, pré-assemblage (soudure par ultrasons, presses, machines Mecalbi…), surmoulage. Tu réponds aux techniciens, aux TL et au manager : réglages, dépannage, préventifs, pièces de rechange, sécurité, qualité de sertissage.
+Réponds dans la langue de la question (français par défaut ; en darija ou en arabe si on t'écrit ainsi), simplement et en phrases courtes ; donne des étapes numérotées quand il y a une procédure. Tes réponses sont lues sur un téléphone, à côté de la machine.
+Appuie-toi d'abord sur le contexte fourni (machines, standards préventifs de l'usine, check-list du préventif). Quand une valeur ou une procédure ne vient pas du standard de l'usine, dis-le et conseille de vérifier la notice du fabricant ou de demander au TL. N'invente ni numéro de pièce ni valeur de réglage.
+Sécurité d'abord : avant toute intervention à risque, rappelle la consignation (machine arrêtée, cadenas, énergies coupées : électricité, air comprimé, ultrasons) et les protections.`;
+const HP = {open: false, busy: false, ctx: null, msgs: [], loadedFor: null};
+const hpStoreKey = () => "helper-conv-" + (S.uid || "local");
+const helperAvailable = () => FIREBASE ? !!(S.db && S.uid) : S.mode === "local";
+function hpLoad(){
+  if(HP.loadedFor === hpStoreKey()) return;
+  HP.loadedFor = hpStoreKey();
+  HP.msgs = (lsGet(hpStoreKey(), []) || []).filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-40);
+}
+const hpSave = () => lsSet(hpStoreKey(), HP.msgs.slice(-40));
+function hpFmt(t){ // texte de HELPER → HTML simple : gras, listes, paragraphes
+  let html = "", list = null;
+  const close = () => { if(list){ html += `</${list}>`; list = null; } };
+  for(const raw of esc(t).split("\n")){
+    const l = raw.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^#{1,4}\s*/, "");
+    let m;
+    if((m = /^\s*[-•*]\s+(.*)$/.exec(l))){ if(list !== "ul"){ close(); html += "<ul>"; list = "ul"; } html += `<li>${m[1]}</li>`; }
+    else if((m = /^\s*\d+[.)]\s+(.*)$/.exec(l))){ if(list !== "ol"){ close(); html += "<ol>"; list = "ol"; } html += `<li>${m[1]}</li>`; }
+    else{ close(); if(l.trim()) html += `<p>${l}</p>`; }
+  }
+  close();
+  return html;
+}
+function helperContext(){
+  const r = role(), me = S.techName || S.meName || "";
+  const L = [`Date : ${fmtISO(todayISO())}, semaine S${CW} de ${YEAR}.`,
+    `Personne qui écrit : ${me || "inconnue"} (${({manager: "manager ou admin maintenance", tl: "TL", tech: "technicien", viewer: "lecture seule"})[r] || r}).`];
+  let svcs = [];
+  if(S.techName){
+    const mine = machines.filter(m => !isOut(m) && (m.tech === S.techName || m.chef === S.techName));
+    svcs = [...new Set(mine.map(m => m.svc))];
+    L.push(`Ses machines (${mine.length}) : ` + mine.slice(0, 80).map(m => `${m.num} (${m.type}, ${SVC[m.svc] ? SVC[m.svc].name : m.svc})`).join(" ; "));
+  } else if(S.scope) svcs = [...S.scope];
+  const c = HP.ctx, m = c && byId[c.mid];
+  if(m){
+    L.push(`Question posée depuis la fiche de la machine ${m.num} : type ${m.type}, n° de série ${m.serie || "?"}, projet ${m.proj || "?"}, section ${SVC[m.svc].name}${m.chef ? ", technicien A·S·T " + m.chef : ""}, technicien M ${m.tech || "?"}.`);
+    if(c.code){
+      L.push(`Préventif concerné : ${TYPES[c.code]} (${c.code}), semaine S${c.w}.`);
+      const pts = stdList(m.svc, c.code);
+      if(pts.length) L.push("Check-list du standard pour ce préventif :\n" + pts.map((x, i) => `${i + 1}. ${x}`).join("\n"));
+    }
+    if(!svcs.includes(m.svc)) svcs.unshift(m.svc);
+  }
+  let std = "";
+  for(const svc of (svcs.length ? svcs : SECTIONS.map(x => x.id))){
+    const st = (S.std || {})[svc]; if(!st || !SVC[svc]) continue;
+    const parts = Object.keys(TYPES).filter(k => (st[k] || []).length).map(k => `${TYPES[k]} : ${st[k].join(" ; ")}`);
+    if(parts.length) std += `\n- ${SVC[svc].name} : ${parts.join(" | ")}`;
+  }
+  if(std) L.push("Standards préventifs de l'usine :" + std.slice(0, 9000));
+  return L.join("\n");
+}
+async function hpUsage(day, add){ // compteur de questions du jour (suivi par le manager)
+  if(!FIREBASE){ const k = "helper-use-" + day, n = lsGet(k, 0) + (add ? 1 : 0); if(add) lsSet(k, n); return n; }
+  const ref = S.fb.rdb.ref(`helperUse/${S.uid}/${day}`);
+  try{
+    if(add){ const r = await ref.transaction(v => (v || 0) + 1); return r.snapshot.val() || 0; }
+    return (await ref.once("value")).val() || 0;
+  }catch(e){ return 0; }
+}
+function helperErr(e){
+  const c = e && e.code, st = e && e.status;
+  if(c === "no_key") return isAdmin() ? "HELPER n'est pas encore activé : enregistrez la clé de l'IA dans Réglages › HELPER." : "HELPER n'est pas encore activé : le manager doit enregistrer la clé de l'IA.";
+  if(st === 401) return isAdmin() ? "La clé de l'IA est refusée : vérifiez-la dans Réglages › HELPER." : "La clé de l'IA est refusée : prévenez le manager.";
+  if(st === 402 || (e && /credit|billing/i.test(e.message || ""))) return isAdmin() ? "Crédit IA épuisé : ajoutez du crédit sur console.anthropic.com." : "Crédit IA épuisé : prévenez le manager.";
+  return aiErrMsg(e);
+}
+function openHelper(ctx){
+  if(!helperAvailable()) return;
+  hpLoad();
+  if(ctx !== undefined) HP.ctx = ctx;
+  HP.open = true; renderHelper();
+  const i = $("#hp-in"); if(i) i.focus();
+}
+function closeHelper(){ HP.open = false; renderHelper(); }
+function renderHelper(){
+  const p = $("#hp"), fab = $("#hp-fab"), ok = helperAvailable();
+  fab.innerHTML = ico("helper") + "HELPER";
+  fab.hidden = !ok || HP.open;
+  if(!ok) HP.open = false;
+  if(!HP.open){ p.hidden = true; p.innerHTML = ""; return; }
+  const m = HP.ctx && byId[HP.ctx.mid], first = (S.techName || S.meName || "").split(" ")[0];
+  p.hidden = false;
+  p.innerHTML = `<div class="hp-h"><span class="logo">${ico("helper")}</span><div style="flex:1;min-width:0"><b>HELPER</b><div class="sub">Assistant technique · IA</div></div><button class="btn" type="button" data-act="hpnew" title="Effacer la conversation">Nouvelle</button><button class="btn" type="button" data-act="hpclose">Fermer</button></div>
+    ${m ? `<div class="hp-ctx">À propos de <b>${esc(m.num)}</b> · ${esc(m.type)}${HP.ctx.code ? ` · préventif ${esc(TYPES[HP.ctx.code].toLowerCase())} S${HP.ctx.w}` : ""} <button type="button" class="lk" data-act="hpctx" title="Ne plus parler de cette machine" aria-label="Retirer la machine">✕</button></div>` : ""}
+    <div class="hp-msgs" id="hp-msgs"><div class="hp-m a"><p>Bonjour${first ? " " + esc(first) : ""}, je suis <b>HELPER</b>, l'assistant technique de la maintenance.</p><p>Posez votre question : une machine, un réglage, une panne, un préventif…</p></div>
+      ${HP.msgs.map(x => `<div class="hp-m ${x.role === "user" ? "u" : "a"}${x.err ? " err" : ""}">${x.role === "user" ? esc(x.content).replace(/\n/g, "<br>") : hpFmt(x.content)}</div>`).join("")}
+      ${HP.busy ? `<div class="hp-m a" id="hp-live"><span class="z">HELPER réfléchit…</span></div>` : ""}</div>
+    <form class="hp-f" id="hp-form"><textarea id="hp-in" rows="1" placeholder="Votre question…" aria-label="Votre question" ${HP.busy ? "disabled" : ""}></textarea><button class="btn pri" type="submit" ${HP.busy ? "disabled" : ""}>Envoyer</button></form>
+    <div class="hp-note">HELPER est une IA : vérifiez les réglages importants avec le standard ou votre TL.</div>`;
+  const box = $("#hp-msgs"); box.scrollTop = box.scrollHeight;
+}
+async function helperSend(text){
+  text = String(text || "").trim();
+  if(!text || HP.busy || !helperAvailable()) return;
+  const day = todayISO();
+  if(!isAdmin() && (await hpUsage(day, false)) >= HELPER_DAY_MAX){
+    HP.msgs.push({role: "assistant", content: `Vous avez posé ${HELPER_DAY_MAX} questions aujourd'hui : c'est la limite. Reprenez demain ou demandez à votre TL.`, err: true});
+    hpSave(); renderHelper(); return;
+  }
+  HP.msgs.push({role: "user", content: text}); HP.busy = true; hpSave(); renderHelper();
+  try{
+    const client = await aiClient();
+    const hist = HP.msgs.filter(x => !x.err).slice(-20);
+    while(hist.length && hist[0].role !== "user") hist.shift();
+    const stream = client.beta.messages.stream({
+      model: AI_MODEL, max_tokens: 8000,
+      betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
+      output_config: {effort: "medium"},
+      system: [{type: "text", text: HELPER_SYSTEM}, {type: "text", text: "Contexte de la conversation :\n" + helperContext()}],
+      messages: hist.map(x => ({role: x.role, content: x.content}))
+    });
+    let out = "";
+    for await (const ev of stream){
+      if(ev.type === "content_block_delta" && ev.delta.type === "text_delta"){
+        out += ev.delta.text;
+        const live = $("#hp-live"); if(live){ live.innerHTML = hpFmt(out); const b = $("#hp-msgs"); b.scrollTop = b.scrollHeight; }
+      }
+    }
+    const msg = await stream.finalMessage();
+    if(msg.stop_reason === "refusal" && !out.trim()) out = "Je ne peux pas répondre à cette question.";
+    HP.msgs.push({role: "assistant", content: out.trim() || "(pas de réponse)"});
+    hpUsage(day, true);
+  }catch(e){ console.warn("HELPER", e); HP.msgs.push({role: "assistant", content: helperErr(e), err: true}); }
+  HP.busy = false; hpSave();
+  if(HP.open){ renderHelper(); const i = $("#hp-in"); if(i) i.focus(); }
+}
+document.addEventListener("submit", ev => { if(ev.target && ev.target.id === "hp-form"){ ev.preventDefault(); helperSend($("#hp-in").value); } });
+document.addEventListener("keydown", ev => { if(ev.target && ev.target.id === "hp-in" && ev.key === "Enter" && !ev.shiftKey){ ev.preventDefault(); helperSend(ev.target.value); } });
+function helperPanel(){ // Réglages › HELPER (manager / admin)
+  if(!FIREBASE || !isAdmin()) return "";
+  const use = S.helperUse || {}, month = todayISO().slice(0, 7), rows = [];
+  for(const uid of Object.keys(use)){
+    const days = use[uid] || {}, m = Object.keys(days).filter(d => d.startsWith(month)).reduce((a, d) => a + (Number(days[d]) || 0), 0);
+    if(m) rows.push({n: (S.users[uid] && S.users[uid].nom) || "Compte", m, t: Number(days[todayISO()]) || 0});
+  }
+  rows.sort((a, b) => b.m - a.m);
+  const tot = rows.reduce((a, r) => a + r.m, 0);
+  return `<div class="panel wide"><h2>HELPER · assistant technique (IA)</h2>
+    <p>HELPER répond aux questions techniques de toute l'équipe (bouton « HELPER » en bas à droite, ou « Demander à HELPER » dans un préventif). Il connaît les machines de chacun et les standards préventifs. La même clé sert à lire les standards (Affectations › Standards préventifs).</p>
+    <div>${S.helperAt ? `<span class="pill done">Activé</span> <span class="z">clé enregistrée le ${esc(fmtStamp(S.helperAt))}</span>` : `<span class="pill week">Pas encore activé</span>`}</div>
+    <div class="row2"><label class="field">${S.helperAt ? "Remplacer la clé API Anthropic" : "Clé API Anthropic"}<input id="hp-key" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label></div>
+    <div class="row-btns"><button class="btn pri" type="button" data-act="hpkeysave">Enregistrer la clé pour l'équipe</button>${S.helperAt ? `<button class="btn danger" type="button" data-act="hpkeydel">Retirer la clé (HELPER arrêté)</button>` : ""}<a class="btn" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Créer une clé</a></div>
+    <p class="lateN" style="font-size:13px">Important : la clé est utilisable par tous les comptes connectés. Fixez une limite de dépense mensuelle sur console.anthropic.com (Settings › Limits) pour ne jamais dépasser votre budget.</p>
+    <p class="z" style="font-size:13px">Limite indicative : ${HELPER_DAY_MAX} questions par personne et par jour (illimité pour les Admin). Coût moyen : quelques centimes par question.</p>
+    ${rows.length ? `<div class="scroll"><table class="t"><thead><tr><th>Ce mois-ci</th><th class="r">Questions</th><th class="r">Aujourd'hui</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.n)}</td><td class="r num">${r.m}</td><td class="r num">${r.t}</td></tr>`).join("")}<tr><td><b>Total</b></td><td class="r num"><b>${tot}</b></td><td></td></tr></tbody></table></div>` : `<p class="z">Aucune question posée ce mois-ci.</p>`}
+  </div>`;
 }
 
 /* Standards préventifs : config/std {section: {M: [points], T: [...], ...}}.
@@ -2215,11 +2422,11 @@ function openStd(svc, draft, aiInfo){ // draft : proposition de l'IA, affichée 
   const used = new Set(machines.filter(m => m.svc === svc && !isOut(m)).flatMap(m => [...m.w].filter(c => TYPES[c])));
   const val = c => draft ? (draft[c] || []).filter(x => typeof x === "string" && x.trim()) : stdList(svc, c);
   const codes = Object.keys(TYPES).filter(c => used.has(c) || val(c).length);
-  const hasKey = !!lsGet(AI_KEY, "");
+  const hasKey = FIREBASE ? !!S.helperAt || !!lsGet(AI_KEY, "") : !!lsGet(AI_KEY, "");
   const aiBox = `<fieldset class="rep ai"><legend>✦ Assistant IA · lire le standard</legend>
         <p class="z" style="margin:0;font-size:13px">Déposez le document du standard de cette section (PDF, photo, Excel, Word ou texte) : l'IA prépare la check-list de chaque préventif ci-dessous. Vous relisez, corrigez si besoin, puis « Enregistrer ».</p>
-        ${hasKey ? `<div class="z" style="font-size:13px">Clé API : enregistrée sur cet appareil · <button type="button" class="lk" data-act="aikey" style="color:var(--accent)">Changer la clé</button></div>`
-          : `<label class="field">Clé API Anthropic (une seule fois sur cet appareil)<input id="ai-key" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label><div class="z" style="font-size:12.5px">Pas de clé ? <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Créer une clé sur console.anthropic.com</a> (payant à l'usage, quelques centimes par document).</div>`}
+        ${hasKey ? `<div class="z" style="font-size:13px">Clé de l'IA : ${FIREBASE && S.helperAt ? "enregistrée pour l'équipe (Réglages › HELPER)" : "enregistrée sur cet appareil"} · <button type="button" class="lk" data-act="aikey" style="color:var(--accent)">Changer la clé</button></div>`
+          : `<label class="field">Clé API Anthropic (${FIREBASE ? "enregistrée pour toute l'équipe : sert aussi à HELPER" : "une seule fois sur cet appareil"})<input id="ai-key" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label><div class="z" style="font-size:12.5px">Pas de clé ? <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Créer une clé sur console.anthropic.com</a> (payant à l'usage, quelques centimes par document).</div>`}
         <input type="file" id="ai-files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.xlsx,.xlsm,.xls,.docx,.txt,.csv,.md">
         <textarea id="ai-text" rows="3" placeholder="… ou collez ici le texte du standard"></textarea>
         <div class="row-btns" style="align-items:center"><button type="button" class="btn pri" data-act="aistd" data-svc="${esc(svc)}">Lire avec l'IA</button><span class="z" id="ai-msg" style="font-size:13px"></span></div>
@@ -2385,6 +2592,7 @@ const ICONS = {
   tv:'<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
   theme:'<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
   install:'<path d="M12 3v11M7.5 9.5 12 14l4.5-4.5M4 15v3.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V15"/>',
+  helper:'<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A1.5 1.5 0 0 1 4 14.5z"/><path d="M12 6.2l.9 1.9 1.9.9-1.9.9-.9 1.9-.9-1.9-1.9-.9 1.9-.9z"/>',
   logout:'<path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14M10 16.5 5.5 12 10 7.5M5.5 12H15"/>',
   logo:'<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4M9 15l2 2 4-4"/>'
 };
@@ -2643,7 +2851,7 @@ function openItem(k){
       <dl class="kv"><dt>Service</dt><dd>${esc(SVC[m.svc].name)}${m.proj ? " · "+esc(m.proj) : ""}</dd><dt>N° de série</dt><dd class="mono">${esc(m.serie)}</dd>${m.chef ? `<dt>Technicien A·S·T</dt><dd>${esc(m.chef)}</dd><dt>Technicien M</dt><dd>${esc(m.tech)}</dd>` : `<dt>Technicien</dt><dd>${esc(m.tech)}</dd>`}<dt>Ce préventif</dt><dd><b>${esc(itemTech(it) || "—")}</b></dd></dl>
       ${hist}${form}
     </div>
-    <div class="dlg-f">${can && rec ? `<button type="button" class="btn danger" data-act="reset" data-k="${esc(k)}">Effacer la saisie</button>` : ""}<button type="button" class="btn" data-act="machine" data-mid="${esc(m.id)}">Fiche machine</button><span class="sp"></span>${can ? `<button type="submit" class="btn ok" id="btn-save">Enregistrer</button>` : ""}</div>
+    <div class="dlg-f">${can && rec ? `<button type="button" class="btn danger" data-act="reset" data-k="${esc(k)}">Effacer la saisie</button>` : ""}<button type="button" class="btn" data-act="machine" data-mid="${esc(m.id)}">Fiche machine</button>${helperAvailable() ? `<button type="button" class="btn" data-act="hpitem" data-k="${esc(k)}">${ico("helper").replace("<svg", '<svg style="width:15px;height:15px;vertical-align:-3px;margin-right:4px"')}Demander à HELPER</button>` : ""}<span class="sp"></span>${can ? `<button type="submit" class="btn ok" id="btn-save">Enregistrer</button>` : ""}</div>
   </form>`;
   dlg.dataset.k = k; dlg.dataset.mode = mode;
   if(!dlg.open) dlg.showModal();
@@ -3305,10 +3513,10 @@ document.addEventListener("click", async ev => {
     case "mode": setMode(el.dataset.v); break;
     case "chkall": for(const x of dlg.querySelectorAll("[data-chk]")) x.checked = true; chkUpdate(); break;
     case "std": openStd(el.dataset.svc); break;
-    case "aikey": lsSet(AI_KEY, ""); openStd($("#std-svc") ? $("#std-svc").value : ""); break;
+    case "aikey": if(FIREBASE){ closeDlg(); go("reglages"); setTimeout(() => { const el2 = $("#hp-key"); if(el2){ el2.scrollIntoView({block: "center"}); el2.focus(); } }, 80); } else { lsSet(AI_KEY, ""); openStd($("#std-svc") ? $("#std-svc").value : ""); } break;
     case "aistd": {
       const msg = $("#ai-msg"), keyIn = $("#ai-key"), svc = el.dataset.svc;
-      if(keyIn && keyIn.value.trim()) lsSet(AI_KEY, keyIn.value.trim());
+      if(keyIn && keyIn.value.trim()){ if(FIREBASE){ if(!(await setHelperKey(keyIn.value.trim()))) break; } else lsSet(AI_KEY, keyIn.value.trim()); }
       const files = [...($("#ai-files").files || [])], pasted = $("#ai-text").value;
       el.disabled = true; msg.className = "z"; msg.textContent = "L'IA lit le standard… (jusqu'à une minute ou deux)";
       try{
@@ -3459,6 +3667,13 @@ document.addEventListener("click", async ev => {
     case "acct": setRole(el.dataset.uid, el.dataset.v); break;
     case "logout": if(S.fb) S.fb.auth.signOut(); break;
     case "install": installApp(); break;
+    case "helper": openHelper(null); break;
+    case "hpclose": closeHelper(); break;
+    case "hpnew": if(!HP.busy){ HP.msgs = []; HP.ctx = null; hpSave(); renderHelper(); } break;
+    case "hpctx": HP.ctx = null; renderHelper(); break;
+    case "hpitem": { const it = S.D.idx.get(el.dataset.k); closeDlg(); if(it) openHelper({mid: it.m.id, code: it.code, w: it.w}); break; }
+    case "hpkeysave": { const v = ($("#hp-key").value || "").trim(); if(!/^sk-ant-/.test(v)){ toast("Collez une clé API Anthropic (elle commence par sk-ant-).", "late"); break; } if(await setHelperKey(v)){ toast("Clé enregistrée : HELPER est activé pour l'équipe."); $("#hp-key").value = ""; } break; }
+    case "hpkeydel": if(await setHelperKey("")) toast("Clé retirée : HELPER est arrêté."); break;
     case "revoke": setChef(el.dataset.uid, false); break;
     case "savestart": { const v = Number($("#set-start").value); if(await writeConfig({start:v})) toast("Début du suivi : S"+v); break; }
   }
