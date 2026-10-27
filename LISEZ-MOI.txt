@@ -58,6 +58,9 @@
    PILOTAGE        Hub          tableau de bord : taux de réalisation, retards,
                                 charge par semaine, classement des techniciens
                    Alertes      retards, semaine en cours, semaine prochaine
+                                (bouton « Masquer » / « Afficher » sur chaque
+                                bloc pour raccourcir la page ; c'est retenu)
+                   HELPER       assistant technique IA (voir plus bas)
    ORGANISATION    Équipes      section > TL > techniciens A·S·T et techniciens M > machines
                    Affectations organigramme, erreurs à corriger, qui fait quoi
    MAINTENANCE     Planning     grille des 53 semaines (+ « Modifier le planning »)
@@ -94,7 +97,8 @@
    sont gardés dans le suivi.
 
    HELPER (assistant technique IA, pour toute l'équipe) :
-   - Bouton « HELPER » en bas à droite (PC et téléphone) : chaque technicien,
+   - Menu « HELPER » (après Alertes) ou bouton rond en bas à droite (PC et
+     téléphone) : chaque technicien,
      TL ou Admin peut lui poser une question technique (réglage, panne,
      préventif, sécurité). HELPER connaît les machines de la personne et les
      standards préventifs. Dans un préventif : « Demander à HELPER » (il
@@ -115,8 +119,11 @@
      (Réglages > HELPER).
    - Le document est envoyé à Anthropic pour être lu.
 
-   Envoyer les alertes (Alertes > « Envoyer (WhatsApp / e-mail) ») :
-   - rapport général, ou la liste de CHAQUE technicien, en un clic ;
+   Envoyer les retards (Alertes > « Envoyer les retards (WhatsApp / e-mail) ») :
+   - le message contient SEULEMENT les machines en retard ;
+   - 0 retard : pas de bouton, rien à envoyer ;
+   - rapport général, ou les retards de CHAQUE technicien (seuls ceux qui ont
+     des retards sont dans la liste), en un clic ;
    - WhatsApp ou la messagerie s'ouvre avec le message déjà écrit ;
    - numéros WhatsApp et e-mails : Affectations > Matricules et contacts.
 

@@ -1627,6 +1627,7 @@ function itemRow(it){
     <div class="it-act">${act}<button class="btn" data-act="item" data-k="${esc(it.key)}">Détails</button></div>
   </div>`;
 }
+const foldBtn = (key, folded) => `<button class="btn" data-act="fold" data-key="${esc(key)}" aria-expanded="${!folded}">${folded ? "Afficher" : "Masquer"}</button>`;
 function listPanel(id, title, note, arr, opts){
   opts = opts || {};
   const si = {}; SECTIONS.forEach((x, i) => { si[x.id] = i; });
@@ -1643,9 +1644,10 @@ function listPanel(id, title, note, arr, opts){
     html += itemRow(it); n++;
   }
   const more = sorted.length > n ? `<div class="more"><button class="btn" data-act="expand" data-id="${id}">Afficher les ${sorted.length} interventions</button></div>` : "";
+  const fk = "al-" + id, folded = !!S.fold[fk];
   return `<div class="panel" id="${id}">
-    <div class="panel-h"><h2>${esc(title)}<span class="c">${arr.length}</span></h2><div class="tools">${note?`<span class="note">${note}</span>`:""}${opts.tools||""}</div></div>
-    <div class="list">${html || `<div class="empty">${esc(opts.empty || "Rien à signaler.")}</div>`}</div>${more}
+    <div class="panel-h"><h2>${esc(title)}<span class="c">${arr.length}</span></h2><div class="tools">${note && !folded ? `<span class="note">${note}</span>` : ""}${folded ? "" : opts.tools || ""}${foldBtn(fk, folded)}</div></div>
+    ${folded ? "" : `<div class="list">${html || `<div class="empty">${esc(opts.empty || "Rien à signaler.")}</div>`}</div>${more}`}
   </div>`;
 }
 
@@ -1687,11 +1689,12 @@ function renderAlertes(D){
       rows += row("tlr", `Techniciens M (${uniq(sm.map(m => m.tech)).length})`, "", b, "");
     }
   }
-  const svcTable = `<div class="panel"><div class="panel-h"><h2>Par section</h2><span class="note">A·S·T = annuel, semestriel, trimestriel · M = mensuel · cliquez sur une section pour filtrer</span></div><div class="scroll"><table class="t"><thead><tr><th>Section / techniciens</th><th class="r">Machines</th><th class="r">En retard</th><th class="r">À faire S${CW}</th><th class="r">Faits S${CW}</th><th>Réalisation</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  const stFold = !!S.fold["al-sections"];
+  const svcTable = `<div class="panel"><div class="panel-h"><h2>Par section</h2>${stFold ? "" : `<span class="note">A·S·T = annuel, semestriel, trimestriel · M = mensuel · cliquez sur une section pour filtrer</span>`}<div class="tools">${foldBtn("al-sections", stFold)}</div></div>${stFold ? "" : `<div class="scroll"><table class="t"><thead><tr><th>Section / techniciens</th><th class="r">Machines</th><th class="r">En retard</th><th class="r">À faire S${CW}</th><th class="r">Faits S${CW}</th><th>Réalisation</th></tr></thead><tbody>${rows}</tbody></table></div>`}</div>`;
 
   const wkShown = S.hideDone ? wk.filter(it => it.st !== "fait") : wk;
   const hideBtn = `<button class="btn" data-act="print">Imprimer (A4)</button><button class="btn" data-act="hidedone">${S.hideDone ? "Afficher les faits" : "Masquer les faits"}</button>`;
-  const repBtn = `<button class="btn pri" data-act="report">Envoyer (WhatsApp / e-mail)</button>${notifSupported() && !notifOn() && Notification.permission !== "denied" ? `<button class="btn" data-act="notifon">Activer les notifications</button>` : ""}`;
+  const repBtn = `${late.length ? `<button class="btn pri" data-act="report">Envoyer les retards (WhatsApp / e-mail)</button>` : ""}${notifSupported() && !notifOn() && Notification.permission !== "denied" ? `<button class="btn" data-act="notifon">Activer les notifications</button>` : ""}`;
   $("#v-alertes").innerHTML = alarm + kpis + svcTable +
     listPanel("p-late", "En retard", `Planifiés avant S${CW}, non faits`, late, {empty:"Aucun préventif en retard.", tools:repBtn}) +
     listPanel("p-week", `Cette semaine · S${CW}`, esc(CW<=NWEEKS?weekRange(CW):""), wkShown, {empty: wk.length ? "Tous les préventifs de la semaine sont faits." : "Aucun préventif planifié cette semaine.", tools:hideBtn}) +
@@ -2929,18 +2932,18 @@ function openMachine(mid){
     if(ok){ closeDlg(); toast(`${m.num} : ${ETATS[k2]}${k2!=="actif"?" depuis S"+since:""}`); }
   });
 }
-function buildReport(){
+function buildReport(){ // machines en retard seulement ; chaîne vide s'il n'y a aucun retard
   const D = S.D, its = D.items.filter(it => matchIt(it));
-  const late = its.filter(it => it.st === "retard"), wk = its.filter(it => it.st === "semaine");
-  const wkAll = its.filter(it => it.ew === CW && it.st !== "suspendu" && it.st !== "hors"), wkDone = wkAll.filter(it => it.st === "fait").length;
+  const late = its.filter(it => it.st === "retard");
+  if(!late.length) return "";
   const f = [S.filters.svc ? SVC[S.filters.svc].name : "Tous les services", S.filters.who || "Tous les responsables"].join(" · ");
   const L = [];
-  L.push(`PRÉVENTIF MAINTENANCE — S${CW} (${CW<=NWEEKS?weekRange(CW):""} ${YEAR})`);
+  L.push(`PRÉVENTIFS EN RETARD — S${CW} (${CW<=NWEEKS?weekRange(CW):""} ${YEAR})`);
   L.push((S.org && S.org.manager ? "Manager maintenance : " + S.org.manager + " · " : "") + f);
-  L.push(`En retard : ${late.length} | À faire cette semaine : ${wk.length} | Faits cette semaine : ${wkDone}/${wkAll.length}`);
+  L.push(`${late.length} préventif${late.length > 1 ? "s" : ""} en retard sur ${new Set(late.map(it => it.m.id)).size} machine${new Set(late.map(it => it.m.id)).size > 1 ? "s" : ""}`);
   const si = {}; SECTIONS.forEach((x, i) => { si[x.id] = i; });
-  const all = [...late, ...wk].sort((a,b) => (si[a.m.svc] ?? 99) - (si[b.m.svc] ?? 99) || itemTech(a).localeCompare(itemTech(b), "fr") || a.ew - b.ew || a.m.num.localeCompare(b.m.num,"fr",{numeric:true}));
-  const line = it => `     - ${it.m.num} (${it.m.type}) — ${TYPES[it.code]}${it.st==="retard" ? " — prévu S"+it.ew : ""}${it.m.proj ? " — "+it.m.proj : ""}`;
+  const all = late.slice().sort((a,b) => (si[a.m.svc] ?? 99) - (si[b.m.svc] ?? 99) || itemTech(a).localeCompare(itemTech(b), "fr") || a.ew - b.ew || a.m.num.localeCompare(b.m.num,"fr",{numeric:true}));
+  const line = it => `     - ${it.m.num} (${it.m.type}) — ${TYPES[it.code]} — prévu S${it.ew}${it.m.proj ? " — "+it.m.proj : ""}`;
   let g0 = null, t0 = null;
   for(const it of all){
     const g = it.m.svc, t = g + "|" + itemTech(it);
@@ -2948,28 +2951,29 @@ function buildReport(){
     if(t !== t0){
       t0 = t;
       const mine = x => x.m.svc + "|" + itemTech(x) === t;
-      const a = late.filter(mine), b = wk.filter(mine), r = techRole(g, itemTech(it));
+      const a = late.filter(mine), r = techRole(g, itemTech(it));
       L.push(`  ■ ${(itemTech(it) || "Sans technicien").toUpperCase()}${r ? " (" + r + ")" : ""}`);
-      if(a.length){ L.push("    En retard :"); a.sort((x,y) => x.ew - y.ew).forEach(x => L.push(line(x))); }
-      if(b.length){ L.push(`    Cette semaine S${CW} :`); b.forEach(x => L.push(line(x))); }
+      a.sort((x,y) => x.ew - y.ew).forEach(x => L.push(line(x)));
     }
   }
-  if(!all.length) L.push("", "Aucun préventif en retard ni à faire cette semaine.");
   return L.join("\n");
 }
 
 const appLine = () => `\n\nApplication : ${APP_URL}${FIREBASE ? "\n(Techniciens : onglet « Technicien », entrez votre matricule)" : ""}`;
-function reportFor(who){ // who : un technicien (sa liste à lui) ou "" (rapport selon les filtres)
-  if(!who) return buildReport() + appLine();
+function reportFor(who){ // who : un technicien (ses retards à lui) ou "" (selon les filtres) ; "" s'il n'y a aucun retard
+  if(!who){ const r = buildReport(); return r ? r + appLine() : ""; }
   const w = S.filters.who; S.filters.who = who;
-  try{ return `Bonjour ${who},\n\n` + buildReport() + appLine(); } finally{ S.filters.who = w; }
+  try{ const r = buildReport(); return r ? `Bonjour ${who},\n\n` + r + appLine() : ""; } finally{ S.filters.who = w; }
 }
 function sendWa(who){
+  const txt = reportFor(who);
+  if(!txt){ toast("Aucun préventif en retard : rien à envoyer."); return; }
   const tel = who ? telNorm(contactOf(who).tel) : "";
-  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(reportFor(who))}`, "_blank", "noopener");
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`, "_blank", "noopener");
 }
 async function sendMail(who){
-  const txt = reportFor(who), mail = who ? (contactOf(who).mail || "") : "", subj = `Préventifs S${CW}${who ? " · " + who : ""}`;
+  const txt = reportFor(who), mail = who ? (contactOf(who).mail || "") : "", subj = `Préventifs en retard · S${CW}${who ? " · " + who : ""}`;
+  if(!txt){ toast("Aucun préventif en retard : rien à envoyer."); return; }
   let body = txt;
   if(encodeURIComponent(txt).length > 1800){ // trop long pour un lien e-mail : on le copie
     try{ await navigator.clipboard.writeText(txt); }catch(e){}
@@ -2979,22 +2983,21 @@ async function sendMail(who){
 }
 function openReport(){
   const txt = reportFor("");
-  const its = S.D.items.filter(it => matchIt(it) && (it.st === "retard" || it.st === "semaine"));
+  const its = S.D.items.filter(it => matchIt(it) && it.st === "retard");
   const si = {}; SECTIONS.forEach((x, i) => { si[x.id] = i; });
   const by = new Map();
   for(const it of its){ const n = itemTech(it); if(!n) continue; const e = by.get(n) || {n, svc: it.m.svc, late: 0, wk: 0}; if(it.st === "retard") e.late++; else e.wk++; by.set(n, e); }
-  const rows = [...by.values()].sort((a, b) => (si[a.svc] ?? 99) - (si[b.svc] ?? 99) || a.n.localeCompare(b.n, "fr"));
+  const rows = [...by.values()].filter(e => e.late).sort((a, b) => (si[a.svc] ?? 99) - (si[b.svc] ?? 99) || a.n.localeCompare(b.n, "fr"));
   const ctc = n => { const c = contactOf(n); return `${c.tel ? `<span class="z mono">${esc(c.tel)}</span>` : ""}${c.mail ? `<span class="z"> ${esc(c.mail)}</span>` : ""}${!c.tel && !c.mail ? `<span class="z">pas de contact</span>` : ""}`; };
   dlg.className = "wide";
   dlg.innerHTML = `<div class="dlg">
-    <div class="dlg-h"><div><h3 id="dlg-title">Envoyer les alertes</h3><div class="sub">Retards et préventifs de la S${CW}, selon les filtres actuels. WhatsApp et e-mail s'ouvrent avec le message déjà écrit : il reste à cliquer « Envoyer ».</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-h"><div><h3 id="dlg-title">Envoyer les alertes</h3><div class="sub">Seulement les machines en retard, selon les filtres actuels. WhatsApp et e-mail s'ouvrent avec le message déjà écrit : il reste à cliquer « Envoyer ».</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
     <div class="dlg-b">
-      <fieldset class="rep"><legend>Rapport général</legend><textarea class="report" id="rep-txt" readonly>${esc(txt)}</textarea>
-        <div class="row-btns"><button type="button" class="btn ok" data-act="sendwa" data-who="">WhatsApp</button><button type="button" class="btn" data-act="sendmail" data-who="">E-mail</button><button type="button" class="btn" data-act="copy">Copier</button></div></fieldset>
-      <fieldset class="rep"><legend>À chaque technicien · sa liste à lui</legend>
-        ${rows.length ? `<div class="scroll"><table class="t"><thead><tr><th>Technicien</th><th class="r">En retard</th><th class="r">S${CW}</th><th>Contact</th><th></th></tr></thead><tbody>${rows.map(e => `<tr><td><b>${esc(e.n)}</b>${matTag(e.n)}<div class="z">${esc(SVC[e.svc] ? SVC[e.svc].name : "")}${techRole(e.svc, e.n) ? " · " + esc(techRole(e.svc, e.n)) : ""}</div></td><td class="r num ${e.late ? "lateN" : "z"}">${e.late}</td><td class="r num">${e.wk}</td><td>${ctc(e.n)}</td><td class="r"><button type="button" class="btn ok" data-act="sendwa" data-who="${esc(e.n)}">WhatsApp</button> <button type="button" class="btn" data-act="sendmail" data-who="${esc(e.n)}">E-mail</button></td></tr>`).join("")}</tbody></table></div>`
-          : `<p class="z">Aucun technicien n'a de préventif en retard ou à faire cette semaine.</p>`}
-        <p class="z" style="margin:0;font-size:12.5px">Numéros WhatsApp et e-mails : Affectations › Matricules et contacts. Sans numéro, WhatsApp vous laisse choisir le contact ou le groupe.</p></fieldset>
+      ${txt ? `<fieldset class="rep"><legend>Tous les retards</legend><textarea class="report" id="rep-txt" readonly>${esc(txt)}</textarea>
+        <div class="row-btns"><button type="button" class="btn ok" data-act="sendwa" data-who="">WhatsApp</button><button type="button" class="btn" data-act="sendmail" data-who="">E-mail</button><button type="button" class="btn" data-act="copy">Copier</button></div></fieldset>` : `<p class="z">Aucun préventif en retard : rien à envoyer.</p>`}
+      ${rows.length ? `<fieldset class="rep"><legend>À chaque technicien en retard · ses machines à lui</legend>
+        <div class="scroll"><table class="t"><thead><tr><th>Technicien</th><th class="r">En retard</th><th>Contact</th><th></th></tr></thead><tbody>${rows.map(e => `<tr><td><b>${esc(e.n)}</b>${matTag(e.n)}<div class="z">${esc(SVC[e.svc] ? SVC[e.svc].name : "")}${techRole(e.svc, e.n) ? " · " + esc(techRole(e.svc, e.n)) : ""}</div></td><td class="r num lateN">${e.late}</td><td>${ctc(e.n)}</td><td class="r"><button type="button" class="btn ok" data-act="sendwa" data-who="${esc(e.n)}">WhatsApp</button> <button type="button" class="btn" data-act="sendmail" data-who="${esc(e.n)}">E-mail</button></td></tr>`).join("")}</tbody></table></div>
+        <p class="z" style="margin:0;font-size:12.5px">Numéros WhatsApp et e-mails : Affectations › Matricules et contacts. Sans numéro, WhatsApp vous laisse choisir le contact ou le groupe.</p></fieldset>` : ""}
     </div>
   </div>`;
   if(!dlg.open) dlg.showModal();
