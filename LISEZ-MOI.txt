@@ -40,8 +40,11 @@
                   reliez chaque compte TL à son nom de TL (liste « TL : … ») ;
                   si le nom du compte est identique, c'est automatique.
    - Technicien : consulte et marque ses préventifs faits ou reportés.
-   Le manager maintenance (bilalnahil05@gmail.com) est Admin pour toujours :
-   personne ne peut lui retirer ce rôle.
+   Le manager maintenance se connecte dans l'onglet « Admin / TL » avec
+   l'identifiant « admin » et son mot de passe. Il est Admin pour toujours :
+   personne ne peut lui retirer ce rôle. (Pas de lien « mot de passe oublié »
+   pour ce compte : en cas d'oubli, le mot de passe se réinitialise avec
+   l'outil Firebase installé sur le PC du manager.)
 
    Mot de passe oublié :
    - compte par e-mail : lien « Mot de passe oublié ? » sur la page de connexion ;
