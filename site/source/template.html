@@ -106,7 +106,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .sbtn.out{background:#C62828;border-color:#C62828;color:#fff;font-weight:600}
 .sbtn.out:hover{background:#A51F1F}
 .sbtn.inst{border-color:var(--accent);color:var(--side-ink)}
-.side-acts-m{display:none}
+.side-acts-m,.me-m-row{display:none}
 .me .ident{font-size:12px;color:var(--side-mute);font-family:var(--f-mono)}
 .inst-steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:15px}
 .inst-steps b{color:var(--ink)}
@@ -197,6 +197,8 @@ body.tv .stile .v{font-size:56px}
 body.tv .it-act{display:none}
 
 @media (max-width:1200px){ .hub .hero{grid-column:1/-1} .hub .s2{grid-column:span 3} .hub .s7,.hub .s5{grid-column:1/-1} }
+@media (max-width:460px){ .side-acts-m .inst .lbl,.side-brand > div{display:none} }
+@media (max-width:380px){ .me-m-row .me-m .role-l,.me-m-row .me-m .ident{display:none} .me-m-row .me-m .role-s{display:inline} }
 @media (max-width:700px){ .hub .s2{grid-column:span 6} .hero .v{font-size:48px} .tlr{grid-template-columns:minmax(0,1fr) auto} .tlr .sbar{grid-column:1/-1;order:3} }
 @media (max-width:1000px){
   .app{grid-template-columns:minmax(0,1fr)}
@@ -207,8 +209,15 @@ body.tv .it-act{display:none}
   .nav{flex-direction:row;flex-basis:100%;overflow-x:auto;scrollbar-width:none;gap:4px}
   .nav::-webkit-scrollbar{display:none}
   .nav-h,.side-foot{display:none}
-  .side-acts-m{display:flex;gap:6px}
-  .side-acts-m .sbtn{padding:6px 9px}
+  .side-acts-m{display:flex;gap:6px;align-items:center;flex:none;flex-wrap:nowrap}
+  .side-acts-m .sbtn{padding:6px 9px;flex:none}
+  .me-m-row{display:flex;flex-basis:100%;min-width:0}
+  .me-m-row:empty{display:none}
+  .me-m{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:7px;color:var(--side-ink);font-size:13.5px;background:var(--side-2);border:1px solid var(--side-line);border-radius:8px;padding:5px 9px}
+  .me-m .role{flex:none;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:9px;background:var(--accent);color:var(--accent-ink);white-space:nowrap}
+  .me-m b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .me-m .ident{flex:none;font-family:var(--f-mono);color:var(--side-mute);font-size:11.5px;white-space:nowrap}
+  .me-m .role-s{display:none}
   .tab{width:auto;padding:7px 10px;font-size:14px}
   .topbar{position:static;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
   .content{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
@@ -570,6 +579,7 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
     <div class="side-brand"><span class="logo" id="logo"></span><div><b>PRÉVENTIF</b><span>Maintenance · 2026</span></div></div>
     <div class="plate" id="plate" aria-live="polite"></div>
     <div class="side-acts side-acts-m" id="side-acts-m"></div>
+    <div class="me-m-row" id="me-m"></div>
     <nav class="nav" id="nav" role="tablist" aria-label="Vues"></nav>
     <div class="side-foot">
       <div class="me" id="me"></div>
@@ -2272,9 +2282,10 @@ function renderSide(){
   const sync = S.mode === "db" && S.loaded ? ["", "Synchronisé en direct"] : S.mode === "local" ? ["warn", "Hors ligne · cet ordinateur"] : S.mode === "readonly" ? ["warn", "Lecture seule"] : ["warn", "Connexion…"];
   const rl = FIREBASE && S.uid ? (S.isOwner ? "Manager · Admin" : {manager:"Admin", tl:"TL", tech:"Technicien", viewer:"Lecture seule"}[r]) : ROLE_LABEL[r];
   $("#me").innerHTML = `<span class="role">${esc(rl)}</span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b>${FIREBASE && S.meIdent ? `<span class="ident">${esc(S.meIdent)}</span>` : ""}<span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>`;
-  const acts = (isStandalone() ? "" : `<button class="sbtn inst" type="button" data-act="install" title="Installer l'application sur ce téléphone ou ce PC">${ico("install")}Installer</button>`)
+  const acts = (isStandalone() ? "" : `<button class="sbtn inst" type="button" data-act="install" title="Installer l'application sur ce téléphone ou ce PC" aria-label="Installer l'application">${ico("install")}<span class="lbl">Installer</span></button>`)
     + (FIREBASE && S.uid ? `<button class="sbtn out" type="button" data-act="logout" title="Se déconnecter">${ico("logout")}Déconnexion</button>` : "");
-  $("#side-acts").innerHTML = acts; $("#side-acts-m").innerHTML = acts;
+  const who = S.uid || S.mode === "local" ? `<span class="me-m" title="${esc(rl + " · " + (S.meName || mgrName()) + (S.meIdent ? " · " + S.meIdent : ""))}"><span class="role"><span class="role-l">${esc(rl)}</span><span class="role-s">${esc(S.isOwner ? "Manager" : rl)}</span></span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b>${FIREBASE && S.meIdent ? `<span class="ident">${esc(S.meIdent)}</span>` : ""}</span>` : "";
+  $("#side-acts").innerHTML = acts; $("#side-acts-m").innerHTML = acts; $("#me-m").innerHTML = who; // téléphone : le cadre du compte est masqué, on l'affiche en haut
   $("#btn-theme").innerHTML = ico("theme") + esc(THEME_SHORT[S.theme] || THEME_SHORT.auto);
   $("#btn-tv").innerHTML = ico("tv") + "Mode TV";
 }
