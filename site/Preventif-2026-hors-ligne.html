@@ -1560,7 +1560,7 @@ function render(){
   { const fab = $("#hp-fab"), ok = helperAvailable(); // après une déconnexion, le panneau et la conversation disparaissent
     if((!ok && HP.open) || (!HP.open && !$("#hp").hidden)) renderHelper();
     fab.innerHTML = ico("helper") + "HELPER"; fab.hidden = !ok || HP.open; }
-  for(const t of document.querySelectorAll(".tab")) t.setAttribute("aria-selected", String(t.dataset.go === S.view));
+  for(const t of document.querySelectorAll(".tab")) t.setAttribute("aria-selected", String(t.dataset.go ? t.dataset.go === S.view : HP.open));
   setCnt("cnt-late", D.items.filter(it => it.st === "retard" && matchIt(it)).length);
   setCnt("cnt-req", pendingReqs());
   setCnt("cnt-aff", canOrg() ? anomalies().length : 0);
@@ -2337,6 +2337,7 @@ function renderHelper(){
   fab.innerHTML = ico("helper") + "HELPER";
   fab.hidden = !ok || HP.open;
   if(!ok) HP.open = false;
+  const tab = $("#tab-helper"); if(tab) tab.setAttribute("aria-selected", String(HP.open));
   if(!HP.open){ p.hidden = true; p.innerHTML = ""; return; }
   const m = HP.ctx && byId[HP.ctx.mid], first = (S.techName || S.meName || "").split(" ")[0];
   p.hidden = false;
@@ -2599,7 +2600,7 @@ const ICONS = {
 };
 const ico = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 const NAV = [
-  ["Pilotage", [["hub","Hub"], ["alertes","Alertes","cnt-late",""]]],
+  ["Pilotage", [["hub","Hub"], ["alertes","Alertes","cnt-late",""], ["helper","HELPER"]]], // HELPER ouvre la conversation (pas une vue)
   ["Organisation", [["equipes","Équipes"], ["affectations","Affectations","cnt-aff","warn"]]],
   ["Maintenance", [["planning","Planning"], ["machines","Machines"]]],
   ["Administration", [["journal","Journal"], ["reglages","Réglages","cnt-req","info"]]]
@@ -2619,13 +2620,15 @@ function role(){
 function allowed(v){ const r = VIEW_ROLES[v]; return VIEWS.includes(v) && (!r || r.includes(role())); }
 let navKey = "";
 function renderNav(){
-  const key = role() + "|" + S.view;
+  const key = role() + "|" + S.view + "|" + helperAvailable();
   if(key === navKey) return;
   navKey = key;
   $("#nav").innerHTML = NAV.map(([h, items]) => {
-    const vis = items.filter(([v]) => allowed(v));
+    const vis = items.filter(([v]) => v === "helper" ? helperAvailable() : allowed(v));
     if(!vis.length) return "";
-    return `<div class="nav-h">${esc(h)}</div>` + vis.map(([v, l, cid, cc]) => `<button class="tab" role="tab" type="button" data-go="${v}" id="tab-${v}" aria-selected="${S.view === v}">${ico(v)}<span>${esc(l)}</span>${cid ? `<span class="cnt ${cc || ""}" id="${cid}" hidden></span>` : ""}</button>`).join("");
+    return `<div class="nav-h">${esc(h)}</div>` + vis.map(([v, l, cid, cc]) => v === "helper"
+      ? `<button class="tab" role="tab" type="button" data-act="helper" id="tab-helper" aria-selected="${HP.open}">${ico("helper")}<span>${esc(l)}</span></button>`
+      : `<button class="tab" role="tab" type="button" data-go="${v}" id="tab-${v}" aria-selected="${S.view === v}">${ico(v)}<span>${esc(l)}</span>${cid ? `<span class="cnt ${cc || ""}" id="${cid}" hidden></span>` : ""}</button>`).join("");
   }).join("");
 }
 function renderSide(){
