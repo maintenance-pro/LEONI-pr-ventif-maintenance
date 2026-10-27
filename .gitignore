@@ -1,0 +1,13 @@
+# Windows / OneDrive
+desktop.ini
+Thumbs.db
+*.lnk
+
+# Fichiers temporaires d'Excel (fichier ouvert)
+~$*
+
+# Pages générées par build.py (refaites à chaque construction)
+site/source/preventif-2026.html
+site/source/preventif-2026-standalone.html
+
+__pycache__/

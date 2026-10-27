@@ -1,0 +1,64 @@
+﻿PRÉVENTIF MAINTENANCE 2026 — MODE D'EMPLOI
+==========================================
+
+1) L'APPLICATION (à utiliser tous les jours)
+   Double-cliquez sur « Préventif 2026 » (sur le bureau ou dans ce dossier).
+   L'application s'ouvre dans sa propre fenêtre (Microsoft Edge, sans barre
+   de navigateur). Connectez-vous avec votre compte Claude si on vous le demande.
+   Adresse : https://claude.ai/artifact/MLPhKdrM3Rn6cdioj1UZRQ
+   Sur téléphone : ouvrez l'adresse, puis menu du navigateur >
+   « Ajouter à l'écran d'accueil ».
+
+   Tout ce qui est saisi est enregistré en ligne et partagé avec les
+   personnes à qui vous donnez accès (bouton « Partager » du site).
+
+   Menu (à gauche) :
+   PILOTAGE        Hub          tableau de bord : taux de réalisation, retards,
+                                charge par semaine, classement des techniciens
+                   Alertes      retards, semaine en cours, semaine prochaine
+   ORGANISATION    Équipes      section > TL > techniciens A·S·T et techniciens M > machines
+                   Affectations organigramme, erreurs à corriger, qui fait quoi
+   MAINTENANCE     Planning     grille des 53 semaines (+ « Modifier le planning »)
+                   Machines     liste du parc
+   ADMINISTRATION  Journal      toutes les actions : saisies, modifications
+                   Réglages     personnes autorisées, export, affichage
+
+   Rôles des techniciens (comme dans l'Excel) :
+   - Technicien A·S·T : préventifs Annuels, Semestriels, Trimestriels
+   - Technicien M     : préventifs Mensuels (et hebdomadaires, démarrage)
+   - Sans technicien A·S·T (Cellule, Surmoulage), le technicien M fait tout.
+
+   Matricules : bouton « Matricules » (Équipes) ou « Matricules des
+   techniciens » (Affectations), ou colonne « Matricule » dans le bouton
+   « Modifier » de chaque section. Tapez le matricule puis « Enregistrer ». Ensuite, taper un matricule dans la recherche (en haut)
+   choisit directement la personne et affiche son planning.
+
+   Imprimer la fiche de la semaine d'un technicien (papier A4) :
+   1. Planning : choisissez la section puis le technicien dans « Responsable ».
+   2. Cliquez « Imprimer la semaine (A4) » (aussi dans Alertes > Cette semaine).
+   3. Choisissez la semaine, cochez « retards » / « semaine suivante » si besoin,
+      puis « Télécharger la fiche A4 (PDF) » et acceptez l'enregistrement.
+   4. Ouvrez le PDF et imprimez-le (Ctrl+P). Une page par technicien, avec les
+      colonnes Statut / Fait le / Visa / Observations à remplir à la main.
+   Sans technicien choisi : une page pour chaque technicien de la section.
+   (Il faut internet : le module PDF se charge au premier clic.)
+
+   Le menu dépend du rôle : Manager maintenance (tout), Responsable autorisé
+   (peut modifier le planning), Technicien, Lecture seule.
+   Bas du menu : thème (sombre / atelier clair / auto) et « Mode TV »
+   (plein écran pour un écran d'atelier, Échap pour quitter).
+   Touche « / » : rechercher une machine.
+
+2) LE DOSSIER « site »
+   - Preventif-2026-hors-ligne.html : copie de secours qui fonctionne sans
+     internet (double-clic). ATTENTION : ce qui est saisi dans cette copie
+     reste dans le navigateur de cet ordinateur et n'apparaît PAS dans
+     l'application en ligne. À utiliser seulement en cas de coupure internet.
+   - preventif.ico : icône de l'application.
+   - source\ : fichiers qui servent à refaire le site à partir d'un
+     nouveau fichier Excel (par exemple le planning 2027).
+     Ne pas les modifier ni les supprimer.
+
+3) LE FICHIER EXCEL
+   L'application ne modifie jamais le fichier Excel. Les changements faits
+   dans l'application sont visibles dans le Journal.
