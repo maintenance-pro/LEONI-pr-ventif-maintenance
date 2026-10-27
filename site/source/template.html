@@ -712,31 +712,46 @@ function whenPill(it){
 /* ---------- Modifications du planning par les responsables d'équipe ----------
    Chaque responsable écrit dans son propre espace modifs/<id>/machines/<machine>.
    Seuls les espaces des personnes autorisées par le propriétaire (config/main.chefs) sont appliqués. */
-function activeChef(uid){ const c = (S.config.chefs || {})[uid]; return !!(c && !c.fin); }
+const ROLES = {admin:"Admin", tl:"TL", tech:"Technicien"};
+const EDIT_ROLES = ["tl", "admin"];
+const roleOf = uid => { const p = S.users[uid]; return p && p.ok === true ? (ROLES[p.role] ? p.role : "tech") : ""; };
+function chefMap(){ // qui modifie le planning : config/main.chefs (claude.ai) ou rôles TL / Admin (Firebase)
+  if(!FIREBASE) return S.config.chefs || {};
+  const o = {};
+  for(const [uid, p] of Object.entries(S.users)){
+    if(!p || uid === S.config.owner) continue;
+    const on = EDIT_ROLES.includes(roleOf(uid));
+    if(on || p.fin) o[uid] = on ? {nom: p.nom || "", equipe: ROLES[p.role] || ""} : {nom: p.nom || "", fin: p.fin};
+  }
+  return o;
+}
+function isAdmin(){ return S.mode === "local" || S.isOwner || (!!FIREBASE && !!S.uid && roleOf(S.uid) === "admin"); }
+function activeChef(uid){ const c = chefMap()[uid]; return !!(c && !c.fin); }
 function canPlan(){
   if(S.mode === "local") return true;
-  return S.mode === "db" && S.loaded && !!S.uid && (S.isOwner || activeChef(S.uid));
+  return S.mode === "db" && S.loaded && !!S.uid && (isAdmin() || activeChef(S.uid));
 }
 function modUids(){
   if(S.mode === "local") return ["local"];
-  const ids = Object.keys(S.config.chefs || {});
+  const ids = Object.keys(chefMap());
   if(S.config.owner) ids.push(S.config.owner);
   return [...new Set(ids)];
 }
 function entryOk(uid, e){
   if(!e || typeof e !== "object" || !e.at) return false;
   if(S.mode === "local" || uid === S.config.owner) return true;
-  const c = (S.config.chefs || {})[uid];
+  const c = chefMap()[uid];
   return !!c && (!c.fin || e.at <= c.fin);
 }
 function whoName(uid){
   if(uid === "local") return "Vous";
   if(uid && uid === S.config.owner) return mgrName();
-  const c = (S.config.chefs || {})[uid] || S.reqs[uid];
+  if(S.users[uid] && S.users[uid].nom) return S.users[uid].nom;
+  const c = chefMap()[uid] || S.reqs[uid];
   return (c && c.nom) || "Responsable";
 }
-function pendingReqs(){ if(!S.isOwner) return 0; const c = S.config.chefs || {}; return Object.keys(S.reqs).filter(u => u !== S.config.owner && !c[u]).length + pendingAccounts(); }
-function pendingAccounts(){ return FIREBASE && S.isOwner ? Object.entries(S.users).filter(([u, p]) => u !== S.uid && p && p.ok == null).length : 0; }
+function pendingReqs(){ if(FIREBASE) return pendingAccounts(); if(!S.isOwner) return 0; const c = S.config.chefs || {}; return Object.keys(S.reqs).filter(u => u !== S.config.owner && !c[u]).length; }
+function pendingAccounts(){ return FIREBASE && isAdmin() ? Object.entries(S.users).filter(([u, p]) => u !== S.uid && u !== S.config.owner && p && p.ok == null).length : 0; }
 const uniq = a => [...new Set(a.filter(Boolean))].sort((x,y) => x.localeCompare(y,"fr"));
 /* Sections : config/org.secTls {svc: [{id,name,shift}]} (TL), secShifts {svc: [{id,name,shift,tl}]} (responsables shift).
    Sans saisie, les TL viennent de la colonne « tl » de l'Excel (« A & B » = deux TL). */
@@ -845,7 +860,7 @@ function copyMat(o, from, to, move){ // un renommage garde le matricule (move : 
 }
 const liveNames = () => new Set([...SECTIONS.flatMap(x => x.tls.map(t => t.name)), ...machines.map(m => m.chef), ...machines.map(m => m.tech)].filter(Boolean));
 function mgrName(){ return (S.org && S.org.manager) || "Manager maintenance"; }
-function canOrg(){ return S.mode === "local" || (S.mode === "db" && S.loaded && S.isOwner); }
+function canOrg(){ return S.mode === "local" || (S.mode === "db" && S.loaded && isAdmin()); }
 function tlOfTech(svc, tech){
   const g = orgMaps(), k = svc+"|"+tech;
   if(g.tl.has(k)) return g.tl.get(k);
@@ -989,7 +1004,8 @@ async function fbSession(u){
   const meRef = rdb.ref("users/" + uid), me = (await meRef.once("value")).val() || {}, pend = S.pendingProfile;
   S.pendingProfile = null;
   const ident = identOf(u.email), nom = (pend && pend.nom) || me.nom || ident;
-  if(!me.nom || pend) await meRef.update({nom, ident, at: me.at || new Date().toISOString()});
+  if(!me.nom || pend) await meRef.update(Object.assign({nom, ident, at: me.at || new Date().toISOString()}, pend && ROLES[pend.demande] ? {demande: pend.demande} : {}));
+  S.meDemande = (pend && pend.demande) || me.demande || "";
   Object.assign(S, {uid, isOwner: owner === uid, meName: nom, meIdent: ident});
   if(claimed && BUILD.seed) await fbSeed(uid);
   if(S.isOwner){ fbEnter(); return; }
@@ -1003,7 +1019,7 @@ function fbEnter(){
   S.db = fbAdapter(S.fb.rdb);
   S.user = {profiles: async ids => Object.fromEntries(ids.map(id => [id, {name: (S.users[id] && S.users[id].nom) || ""}])), me: async () => ({name: S.meName})};
   S.canWrite = true; S.mode = "db"; S.loaded = false;
-  const ur = S.fb.rdb.ref("users"), uh = sn => { S.users = sn.val() || {}; scheduleRender(); };
+  const ur = S.fb.rdb.ref("users"), uh = sn => { S.users = sn.val() || {}; syncModSubs(); buildMachines(); scheduleRender(); }; // les rôles TL / Admin décident quelles modifications du planning s'appliquent
   ur.on("value", uh, () => {});
   fbData.push(() => ur.off("value", uh), ...subscribeAll(S.db));
   render();
@@ -1021,22 +1037,34 @@ async function fbSeed(uid){ // reprise des données de l'application claude.ai, 
   for(const id in mm) up["modifs/" + uid + "/machines/" + id] = mm[id];
   await rdb.ref().update(up);
 }
-async function setAccount(uid, on){
-  if(!FIREBASE || !S.isOwner || !uid || uid === S.uid) return;
-  const n = (S.users[uid] || {}).nom || "Ce compte";
-  try{ await S.fb.rdb.ref("users/" + uid + "/ok").set(on); toast(on ? `${n} peut maintenant ouvrir l'application.` : `Accès retiré : ${n}.`); }
-  catch(e){ toast("Non enregistré (" + fbCode(e) + ").", "late"); }
+async function setRole(uid, r){ // r : tech | tl | admin | off
+  if(!FIREBASE || !isAdmin() || !uid || uid === S.uid || uid === S.config.owner) return;
+  const p = S.users[uid] || {}, was = roleOf(uid), now = new Date().toISOString(), n = p.nom || "Ce compte";
+  const up = r === "off" ? {ok: false} : {ok: true, role: r};
+  if(EDIT_ROLES.includes(was) && !EDIT_ROLES.includes(r)) up.fin = now; // ses modifications du planning déjà faites restent
+  else if(EDIT_ROLES.includes(r)) up.fin = null;
+  try{ await S.fb.rdb.ref("users/" + uid).update(up); toast(r === "off" ? `Accès retiré : ${n}.` : `${n} : ${ROLES[r]}.`); }
+  catch(e){ toast("Non enregistré (" + fbCode(e) + ").", "late"); scheduleRender(); }
 }
 function accountsPanel(){
-  if(!FIREBASE || !S.isOwner) return "";
-  const rows = Object.entries(S.users).filter(([u, p]) => u !== S.uid && p).map(([uid, p]) => ({uid, nom: p.nom || "Sans nom", ident: p.ident || "", at: p.at || "", st: p.ok === true ? "ok" : p.ok === false ? "off" : "wait"}));
+  if(!FIREBASE || !isAdmin()) return "";
+  const own = S.config.owner;
+  const rows = Object.entries(S.users).filter(([u, p]) => u !== own && p).map(([uid, p]) => ({uid, nom: p.nom || "Sans nom", ident: p.ident || "", at: p.at || "", dem: ROLES[p.demande] ? p.demande : "", role: roleOf(uid), st: p.ok === true ? "ok" : p.ok === false ? "off" : "wait"}));
   rows.sort((a, b) => (a.st !== "wait") - (b.st !== "wait") || a.nom.localeCompare(b.nom, "fr"));
-  const pill = st => st === "ok" ? `<span class="pill done">Autorisé</span>` : st === "off" ? `<span class="pill off">Accès retiré</span>` : `<span class="pill week">En attente</span>`;
-  const act = r => r.st === "ok" ? `<button class="btn danger" data-act="acct" data-v="0" data-uid="${esc(r.uid)}">Retirer l'accès</button>` : `<button class="btn ok" data-act="acct" data-v="1" data-uid="${esc(r.uid)}">Autoriser</button>`;
-  return `<div class="panel wide"><h2>Comptes</h2>
-    <p>Chaque personne crée son compte sur la page de connexion de l'application (e-mail ou matricule, et un mot de passe). Elle ne voit rien tant que vous ne l'avez pas autorisée. Un compte autorisé peut marquer ses préventifs faits ou reportés ; pour modifier le planning, autorisez-le aussi dans « Personnes autorisées à modifier le planning ».</p>
-    ${rows.length ? `<div class="scroll"><table class="t"><thead><tr><th>Nom</th><th>E-mail ou matricule</th><th>Créé le</th><th>Statut</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${esc(r.nom)}</b></td><td class="mono">${esc(r.ident)}</td><td class="z">${esc(r.at ? fmtStamp(r.at) : "")}</td><td>${pill(r.st)}</td><td class="r">${act(r)}</td></tr>`).join("")}</tbody></table></div>`
-      : `<p class="z">Aucun autre compte pour l'instant. Donnez le lien de l'application à vos TL et techniciens : ${esc(APP_URL)}</p>`}</div>`;
+  const ownerRow = S.users[own] ? `<tr><td><b>${esc(S.users[own].nom || mgrName())}</b></td><td class="mono">${esc(S.users[own].ident || "")}</td><td class="z"></td><td><span class="pill done">Manager · Admin</span></td><td></td></tr>` : "";
+  const cell = r => {
+    if(r.uid === S.uid) return `<span class="pill done">${esc(ROLES[r.role] || "")} (vous)</span>`;
+    const opts = (r.st === "wait" ? `<option value="" selected>En attente</option>` : "")
+      + Object.entries(ROLES).map(([k, l]) => `<option value="${k}" ${r.st === "ok" && r.role === k ? "selected" : ""}>${l}</option>`).join("")
+      + `<option value="off" ${r.st === "off" ? "selected" : ""}>Accès retiré</option>`;
+    return `<select data-chg="acctrole" data-uid="${esc(r.uid)}" aria-label="Rôle de ${esc(r.nom)}">${opts}</select>`;
+  };
+  const quick = r => r.st === "wait" && r.uid !== S.uid ? `<button class="btn ok" data-act="acct" data-v="${r.dem || "tech"}" data-uid="${esc(r.uid)}">Autoriser comme ${esc(ROLES[r.dem || "tech"])}</button>` : "";
+  return `<div class="panel wide"><h2>Comptes et rôles</h2>
+    <p>Chaque personne crée son compte sur la page de connexion de l'application (e-mail ou matricule, et un mot de passe) et indique le rôle qu'elle demande. Elle ne voit rien tant que vous ne l'avez pas autorisée.</p>
+    <p><b>Admin</b> : tout, comme le manager (organisation, réglages, comptes, planning). <b>TL</b> : modifie le planning, voit Affectations et Journal. <b>Technicien</b> : consulte et marque ses préventifs faits ou reportés.</p>
+    <div class="scroll"><table class="t"><thead><tr><th>Nom</th><th>E-mail ou matricule</th><th>Demande</th><th>Rôle</th><th></th></tr></thead><tbody>${ownerRow}${rows.map(r => `<tr><td><b>${esc(r.nom)}</b><div class="z">${esc(r.at ? "créé le " + fmtStamp(r.at) : "")}</div></td><td class="mono">${esc(r.ident)}</td><td>${r.dem ? esc(ROLES[r.dem]) : `<span class="z">—</span>`}</td><td>${cell(r)}</td><td class="r">${quick(r)}</td></tr>`).join("")}</tbody></table></div>
+    ${rows.length ? "" : `<p class="z">Aucun autre compte pour l'instant. Donnez le lien de l'application à vos TL et techniciens : ${esc(APP_URL)}</p>`}</div>`;
 }
 /* Page de connexion (par-dessus l'application) */
 function gate(kind, msg){
@@ -1048,11 +1076,12 @@ function gate(kind, msg){
   if(kind === "loading") body = `<p class="z">Connexion…</p>`;
   else if(kind === "offline") body = `<h2>Pas de connexion</h2><p>L'application n'a pas pu joindre Firebase. Vérifiez la connexion internet.</p><button class="btn pri" type="button" data-g="reload">Réessayer</button>`;
   else if(kind === "error") body = `<h2>Erreur</h2><p>${esc(msg || "")}</p><button class="btn pri" type="button" data-g="reload">Réessayer</button><button class="btn" type="button" data-g="out">Se déconnecter</button>`;
-  else if(kind === "wait") body = `<h2>Compte en attente</h2><p>Bonjour <b>${esc(S.meName)}</b>. Votre compte <span class="mono">${esc(S.meIdent)}</span> est créé. Le manager maintenance doit maintenant l'autoriser (Réglages › Comptes).</p><p class="gate-note">Cette page s'ouvrira toute seule dès qu'il l'aura autorisé.</p><button class="btn" type="button" data-g="out">Se déconnecter</button>`;
+  else if(kind === "wait") body = `<h2>Compte en attente</h2><p>Bonjour <b>${esc(S.meName)}</b>. Votre compte <span class="mono">${esc(S.meIdent)}</span>${ROLES[S.meDemande] ? ` (rôle demandé : <b>${esc(ROLES[S.meDemande])}</b>)` : ""} est créé. Le manager maintenance doit maintenant l'autoriser (Réglages › Comptes).</p><p class="gate-note">Cette page s'ouvrira toute seule dès qu'il l'aura autorisé.</p><button class="btn" type="button" data-g="out">Se déconnecter</button>`;
   else {
     const up = kind === "signup";
     body = `<form id="gate-form" style="display:contents" novalidate><h2>${up ? "Créer un compte" : "Connexion"}</h2>
-      ${up ? `<label class="field">Nom et prénom<input id="g-nom" autocomplete="name" maxlength="80"></label>` : ""}
+      ${up ? `<label class="field">Nom et prénom<input id="g-nom" autocomplete="name" maxlength="80"></label>
+      <label class="field">Votre rôle<select id="g-role"><option value="tech">Technicien</option><option value="tl">TL</option><option value="admin">Admin</option></select></label>` : ""}
       <label class="field">E-mail ou matricule<input id="g-id" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
       <label class="field">Mot de passe<input id="g-pw" type="password" autocomplete="${up ? "new-password" : "current-password"}"></label>
       ${up ? `<label class="field">Confirmer le mot de passe<input id="g-pw2" type="password" autocomplete="new-password"></label>` : ""}
@@ -1077,7 +1106,7 @@ document.addEventListener("submit", async ev => {
     const nom = $("#g-nom").value.trim().replace(/\s+/g, " ");
     if(!nom){ say("Tapez votre nom et prénom."); return; }
     if(pw !== $("#g-pw2").value){ say("Les deux mots de passe sont différents."); return; }
-    S.pendingProfile = {nom};
+    S.pendingProfile = {nom, demande: $("#g-role").value};
   }
   btn.disabled = true; say("");
   try{ await (up ? S.fb.auth.createUserWithEmailAndPassword(email, pw) : S.fb.auth.signInWithEmailAndPassword(email, pw)); }
@@ -1475,8 +1504,9 @@ function renderPlanning(D){
   let tools = `<button class="btn pri" data-act="print">Imprimer la semaine (A4)</button>${byTech ? `<div class="seg" role="group" aria-label="Machines de ${esc(who)}"><button data-act="planall" data-v="0" aria-pressed="${!S.planAllM}" title="Machines où ${esc(who)} est en vert">En vert pour lui · ${nMine}</button><button data-act="planall" data-v="1" aria-pressed="${!!S.planAllM}">Toutes ses machines · ${nAllT}</button></div>` : ""}<button class="btn" data-act="xlsxexp">Exporter Excel</button>${can ? `<button class="btn" data-act="xlsximp">Importer Excel</button><button class="btn" data-act="addm">Ajouter une machine</button>` : ""}<button class="btn" data-act="people">${S.showPeople ? "Masquer TL / techniciens" : "Afficher TL / techniciens"}</button><span class="note">Couleurs :</span><div class="seg" role="group" aria-label="Couleurs"><button data-act="colorby" data-v="statut" aria-pressed="${S.colorBy==="statut"}">Statut</button><button data-act="colorby" data-v="type" aria-pressed="${S.colorBy==="type"}">Type de préventif</button></div>`;
   if(!ed){
     if(can) tools += `<button class="btn pri" data-act="editmode">Modifier le planning</button>`;
+    else if(FIREBASE && S.mode === "db") tools += `<span class="note">Modifier le planning : rôle TL ou Admin</span>`;
     else if(S.mode === "db" && S.loaded && S.uid){
-      const c = (S.config.chefs || {})[S.uid];
+      const c = chefMap()[S.uid];
       tools += c && c.fin ? `<span class="pill off">Accès à la modification retiré</span>` : S.reqs[S.uid] ? `<span class="pill week">Demande d'accès en attente</span>` : `<button class="btn" data-act="reqaccess">Demander l'accès pour modifier</button>`;
     }
   }
@@ -1574,6 +1604,7 @@ function renderEquipes(D){
 }
 
 function chefsPanel(){
+  if(FIREBASE) return ""; // avec Firebase, les rôles TL / Admin se donnent dans « Comptes »
   let inner;
   if(S.mode === "local") inner = `<p>Mode hors ligne : toute personne qui utilise cet ordinateur peut modifier le planning.</p>`;
   else if(S.isOwner){
@@ -1599,7 +1630,7 @@ function chefsPanel(){
 }
 function renderReglages(D){
   const total = D.items.length, recs = D.items.filter(it => it.rec).length;
-  const canStart = S.mode === "local" || (writable() && S.isOwner);
+  const canStart = S.mode === "local" || (writable() && isAdmin());
   const opts = Array.from({length:NWEEKS}, (_,i) => i+1).map(w => `<option value="${w}" ${w===D.start?"selected":""}>S${w} · ${esc(weekRange(w))}</option>`).join("");
   const canExport = S.mode === "local" || !!FIREBASE || !!S.dl;
   const storage = {local:"Navigateur de cet ordinateur (mode hors ligne)", db:"Base partagée de l'application (synchronisée)", readonly:"Base partagée — lecture seule", loading:"Connexion…"}[S.mode];
@@ -1991,7 +2022,7 @@ const TITLES = {hub:"Hub", alertes:"Alertes", equipes:"Équipes", affectations:"
 const THEME_LABEL = {auto:"Automatique (comme l'appareil)", dark:"Sombre", light:"Atelier (clair)"};
 const THEME_SHORT = {auto:"Thème auto", dark:"Thème sombre", light:"Thème atelier"};
 function role(){
-  if(S.mode === "local" || S.isOwner) return "manager";
+  if(S.mode === "local" || isAdmin()) return "manager";
   if(S.uid && activeChef(S.uid)) return "tl";
   if(S.mode === "db" && S.canWrite) return "tech";
   return "viewer";
@@ -2011,7 +2042,8 @@ function renderNav(){
 function renderSide(){
   const r = role();
   const sync = S.mode === "db" && S.loaded ? ["", "Synchronisé en direct"] : S.mode === "local" ? ["warn", "Hors ligne · cet ordinateur"] : S.mode === "readonly" ? ["warn", "Lecture seule"] : ["warn", "Connexion…"];
-  $("#me").innerHTML = `<span class="role">${esc(ROLE_LABEL[r])}</span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b><span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>${FIREBASE && S.uid ? `<button class="lk me-out" type="button" data-act="logout">Se déconnecter${S.meIdent ? " · " + esc(S.meIdent) : ""}</button>` : ""}`;
+  const rl = FIREBASE && S.uid ? (S.isOwner ? "Manager · Admin" : {manager:"Admin", tl:"TL", tech:"Technicien", viewer:"Lecture seule"}[r]) : ROLE_LABEL[r];
+  $("#me").innerHTML = `<span class="role">${esc(rl)}</span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b><span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>${FIREBASE && S.uid ? `<button class="lk me-out" type="button" data-act="logout">Se déconnecter${S.meIdent ? " · " + esc(S.meIdent) : ""}</button>` : ""}`;
   $("#btn-theme").innerHTML = ico("theme") + esc(THEME_SHORT[S.theme] || THEME_SHORT.auto);
   $("#btn-tv").innerHTML = ico("tv") + "Mode TV";
 }
@@ -2142,7 +2174,7 @@ function knownName(uid){
   if(uid === "local") return "Vous";
   if(uid === S.config.owner) return mgrName();
   if(S.users[uid] && S.users[uid].nom) return S.users[uid].nom;
-  const c = (S.config.chefs || {})[uid] || S.reqs[uid];
+  const c = chefMap()[uid] || S.reqs[uid];
   return c && c.nom ? c.nom : null;
 }
 function renderJournal(){
@@ -2967,7 +2999,7 @@ document.addEventListener("click", async ev => {
     case "deltl": { const svc = el.dataset.svc, tl = el.dataset.tl; if(await writeOrg(o => { o.tls = o.tls || {}; o.tls[svc] = (o.tls[svc] || []).filter(x => x !== tl); }, `${SVC[svc].name} · responsable d'équipe retiré : ${tl}`)) toast("Responsable d'équipe retiré."); break; }
     case "deltech": { const svc = el.dataset.svc, tech = el.dataset.tech; if(await writeOrg(o => { o.tl = (o.tl || []).filter(r => !(r.svc === svc && r.tech === tech)); }, `${SVC[svc].name} · technicien retiré : ${tech}`)) toast("Technicien retiré."); break; }
     case "approve": setChef(el.dataset.uid, true); break;
-    case "acct": setAccount(el.dataset.uid, el.dataset.v === "1"); break;
+    case "acct": setRole(el.dataset.uid, el.dataset.v); break;
     case "logout": if(S.fb) S.fb.auth.signOut(); break;
     case "revoke": setChef(el.dataset.uid, false); break;
     case "savestart": { const v = Number($("#set-start").value); if(await writeConfig({start:v})) toast("Début du suivi : S"+v); break; }
@@ -2979,6 +3011,7 @@ document.addEventListener("change", ev => {
   const el = ev.target.closest("[data-chg]"); if(!el) return;
   if(el.dataset.chg === "tl") setTechTL(el.dataset.svc, el.dataset.tech, el.value);
   else if(el.dataset.chg === "mtech") setMachineTech(el.dataset.mid, el.value);
+  else if(el.dataset.chg === "acctrole"){ if(el.value) setRole(el.dataset.uid, el.value); }
   else if(el.dataset.chg === "theme"){ S.theme = el.value; saveUI(); applyTheme(); render(); }
 });
 $("#f-svc").addEventListener("change", e => { S.filters.svc = e.target.value; saveUI(); render(); });

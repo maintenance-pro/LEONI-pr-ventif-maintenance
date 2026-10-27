@@ -22,9 +22,21 @@
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.isString() && newData.val().length <= 40"
         },
+        "demande": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.val() === 'tech' || newData.val() === 'tl' || newData.val() === 'admin'"
+        },
         "ok": {
-          ".write": "auth != null && root.child('meta/owner').val() === auth.uid && auth.uid !== $uid",
+          ".write": "auth != null && auth.uid !== $uid && $uid !== root.child('meta/owner').val() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
           ".validate": "newData.isBoolean()"
+        },
+        "role": {
+          ".write": "auth != null && auth.uid !== $uid && $uid !== root.child('meta/owner').val() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
+          ".validate": "newData.val() === 'tech' || newData.val() === 'tl' || newData.val() === 'admin'"
+        },
+        "fin": {
+          ".write": "auth != null && auth.uid !== $uid && $uid !== root.child('meta/owner').val() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
+          ".validate": "newData.isString() && newData.val().length <= 40"
         },
         "$other": {
           ".validate": false
@@ -39,7 +51,7 @@
     },
     "config": {
       ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
-      ".write": "auth != null && root.child('meta/owner').val() === auth.uid"
+      ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))"
     },
     "reqs": {
       ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
@@ -50,7 +62,7 @@
     "modifs": {
       ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)",
       "$uid": {
-        ".write": "auth != null && auth.uid === $uid && (root.child('meta/owner').val() === auth.uid || root.child('users/' + auth.uid + '/ok').val() === true)"
+        ".write": "auth != null && auth.uid === $uid && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))"
       }
     }
   }
