@@ -41,6 +41,7 @@ rules = {"rules": {
             "ok": {".write": by_admin_not_self_owner, ".validate": "newData.isBoolean()"},
             "role": {".write": by_admin_not_self_owner, ".validate": role_ok},
             "fin": {".write": by_admin_not_self_owner, ".validate": "newData.isString() && newData.val().length <= 40"},
+            "tlName": {".write": by_admin_not_self_owner, ".validate": "newData.isString() && newData.val().length <= 80"},
             "$other": {".validate": False},
         },
     },

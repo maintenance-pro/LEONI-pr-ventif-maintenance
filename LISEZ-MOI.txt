@@ -35,7 +35,10 @@
    Les 3 rôles :
    - Admin      : tout, comme le manager (organisation, réglages, comptes,
                   planning).
-   - TL         : modifie le planning, voit Affectations et Journal.
+   - TL         : voit et modifie SEULEMENT son équipe (les sections dont il
+                  est TL), voit Affectations et Journal. Dans Comptes et rôles,
+                  reliez chaque compte TL à son nom de TL (liste « TL : … ») ;
+                  si le nom du compte est identique, c'est automatique.
    - Technicien : consulte et marque ses préventifs faits ou reportés.
    Le manager maintenance (bilalnahil05@gmail.com) est Admin pour toujours :
    personne ne peut lui retirer ce rôle.
@@ -76,6 +79,15 @@
       colonnes Statut / Fait le / Visa / Observations à remplir à la main.
    Sans technicien choisi : une page pour chaque technicien de la section.
    (Il faut internet : le module PDF se charge au premier clic.)
+
+   Envoyer les alertes (Alertes > « Envoyer (WhatsApp / e-mail) ») :
+   - rapport général, ou la liste de CHAQUE technicien, en un clic ;
+   - WhatsApp ou la messagerie s'ouvre avec le message déjà écrit ;
+   - numéros WhatsApp et e-mails : Affectations > Matricules et contacts.
+
+   Notifications : Réglages > Notifications > « Activer » (sur chaque PC ou
+   téléphone). Résumé du jour, préventif qui passe en retard, compte à
+   autoriser. Elles arrivent quand l'application est ouverte (même réduite).
 
    Bas du menu : thème (sombre / atelier clair / auto), « Mode TV »
    (plein écran pour un écran d'atelier, Échap pour quitter), Se déconnecter.

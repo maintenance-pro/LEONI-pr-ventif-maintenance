@@ -502,9 +502,9 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .org-sectl .pp .z{font-size:11px}
 .shf{font-size:11px;font-weight:600;padding:1px 7px;border-radius:9px;background:var(--surface);color:var(--ink-2);border:1px solid var(--line);white-space:nowrap}
 .mat{font-family:var(--f-mono);font-size:11px;font-weight:600;padding:1px 6px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);margin-left:6px;white-space:nowrap;vertical-align:1px}
-.erow.e-mat{grid-template-columns:minmax(0,1.6fr) minmax(0,1.2fr) minmax(0,1fr)}
+.erow.e-mat{grid-template-columns:minmax(0,1.4fr) minmax(0,.9fr) minmax(0,.8fr) minmax(0,1fr) minmax(0,1.3fr)}
 .erow.e-mat .e-n{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media (max-width:600px){ .erow.e-mat{grid-template-columns:minmax(0,1fr) auto} .erow.e-mat input{grid-column:1/-1} }
+@media (max-width:700px){ .erow.e-mat{grid-template-columns:minmax(0,1fr) auto} .erow.e-mat input{grid-column:1/-1} }
 .org-sectl .adds{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
 .addp{appearance:none;border:1px dashed var(--accent);background:transparent;color:var(--ink);border-radius:6px;padding:4px 9px;font-size:12.5px;font-weight:600;cursor:pointer}
 .addp:hover{background:var(--surface)}
@@ -694,6 +694,7 @@ function isOut(m){ // machine transférée ou obsolète : hors parc à partir de
 function matchM(m, ignoreSvc, includeOut){
   const f = S.filters;
   if(!includeOut && isOut(m)) return false;
+  if(S.scope && !S.scope.has(m.svc)) return false;
   if(!ignoreSvc && f.svc && m.svc !== f.svc) return false;
   if(f.who && m.tech !== f.who && m.chef !== f.who && !(SVC[m.svc] && (SVC[m.svc].tls.some(t => t.name === f.who) || SVC[m.svc].shifts.some(r => r.name === f.who)))) return false;
   if(f.q){
@@ -737,6 +738,17 @@ function chefMap(){ // qui modifie le planning : config/main.chefs (claude.ai) o
   return o;
 }
 function isAdmin(){ return S.mode === "local" || S.isOwner || (!!FIREBASE && !!S.uid && roleOf(S.uid) === "admin"); }
+const tlNames = () => uniq(SECTIONS.flatMap(sv => sv.tls.map(t => t.name)));
+const sameName = (a, b) => !!a && !!b && norm(a).trim() === norm(b).trim();
+function tlLinkOf(uid){ // nom de TL relié au compte (choisi par le manager, sinon même nom)
+  const p = S.users[uid] || {};
+  return p.tlName || tlNames().find(t => sameName(t, p.nom)) || "";
+}
+function tlScope(){ // compte TL : seulement les sections dont il est TL
+  if(!FIREBASE || S.mode !== "db" || !S.uid || isAdmin() || roleOf(S.uid) !== "tl") return null;
+  const n = tlLinkOf(S.uid);
+  return new Set(n ? SECTIONS.filter(sv => sv.tls.some(t => sameName(t.name, n))).map(sv => sv.id) : []);
+}
 function activeChef(uid){ const c = chefMap()[uid]; return !!(c && !c.fin); }
 function canPlan(){
   if(S.mode === "local") return true;
@@ -862,8 +874,22 @@ function setMats(o, entries){ // entries : [[nom, matricule]] ; matricule vide =
   for(const [n, v] of entries){ if(v) m.set(n, v); else m.delete(n); }
   o.mats = [...m.entries()].map(([name, mat]) => ({name, mat}));
 }
-function copyMat(o, from, to, move){ // un renommage garde le matricule (move : l'ancien nom disparaît partout)
+const contactOf = n => ((S.org || {}).contacts || []).find(c => c && c.name === n) || {};
+function setContacts(o, entries){ // entries : [[nom, téléphone, e-mail]] ; les deux vides = retiré
+  const m = new Map((o.contacts || []).filter(c => c && c.name).map(c => [c.name, c]));
+  for(const [n, tel, mail] of entries){ if(tel || mail) m.set(n, {name: n, tel, mail}); else m.delete(n); }
+  o.contacts = [...m.values()];
+}
+function telNorm(v){ // numéro WhatsApp international sans + (06… → 2126…)
+  let d = String(v || "").replace(/[^\d+]/g, "");
+  if(d.startsWith("+")) d = d.slice(1); else if(d.startsWith("00")) d = d.slice(2); else if(/^0\d{9}$/.test(d)) d = "212" + d.slice(1);
+  return /^\d{8,15}$/.test(d) ? d : "";
+}
+const MAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+function copyMat(o, from, to, move){ // un renommage garde le matricule et le contact (move : l'ancien nom disparaît partout)
   if(!to || from === to) return;
+  const ct = (o.contacts || []).find(r => r && r.name === from);
+  if(ct && !(o.contacts || []).some(r => r && r.name === to)) o.contacts = (move ? o.contacts.filter(r => r !== ct) : o.contacts).concat([Object.assign({}, ct, {name: to})]);
   const a = o.mats || [], f = a.find(r => r && r.name === from);
   if(!f) return;
   const b = move ? a.filter(r => r !== f) : a;
@@ -1014,6 +1040,7 @@ function fbLeave(){
   fbData.forEach(f => f()); fbData = [];
   for(const k of Object.keys(modSubs)){ modSubs[k](); delete modSubs[k]; }
   Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}, techMats:undefined, orgLoaded:false});
+  NT.late = null; NT.pend = null;
   buildMachines();
 }
 async function fbSession(u){
@@ -1077,6 +1104,11 @@ async function fbSeed(uid){ // reprise des données de l'application claude.ai, 
   for(const id in mm) up["modifs/" + uid + "/machines/" + id] = mm[id];
   await rdb.ref().update(up);
 }
+async function setTlLink(uid, name){
+  if(!FIREBASE || !isAdmin() || !uid) return;
+  try{ await S.fb.rdb.ref("users/" + uid + "/tlName").set(name || null); toast(`${(S.users[uid] || {}).nom || "Ce compte"} : TL ${name || "non relié"}.`); }
+  catch(e){ toast("Non enregistré (" + fbCode(e) + ").", "late"); scheduleRender(); }
+}
 async function setRole(uid, r){ // r : tech | tl | admin | off
   if(!FIREBASE || !isAdmin() || !uid || uid === S.uid || uid === S.config.owner) return;
   const p = S.users[uid] || {}, was = roleOf(uid), now = new Date().toISOString(), n = p.nom || "Ce compte";
@@ -1098,13 +1130,15 @@ function accountsPanel(){
     const opts = (r.st === "wait" ? `<option value="" selected>En attente</option>` : "")
       + Object.entries(ROLES).map(([k, l]) => `<option value="${k}" ${r.st === "ok" && r.role === k ? "selected" : ""}>${l}</option>`).join("")
       + `<option value="off" ${r.st === "off" ? "selected" : ""}>Accès retiré</option>`;
-    return `<select data-chg="acctrole" data-uid="${esc(r.uid)}" aria-label="Rôle de ${esc(r.nom)}">${opts}</select>`;
+    const link = r.st === "ok" && r.role === "tl" ? (() => { const cur = tlLinkOf(r.uid);
+      return ` <select data-chg="accttl" data-uid="${esc(r.uid)}" aria-label="TL relié à ${esc(r.nom)}" title="Le TL ne voit que les sections de ce nom">${cur ? "" : `<option value="" selected>Relier à un TL…</option>`}${tlNames().map(t => `<option value="${esc(t)}" ${t === cur ? "selected" : ""}>TL : ${esc(t)}</option>`).join("")}</select>`; })() : "";
+    return `<select data-chg="acctrole" data-uid="${esc(r.uid)}" aria-label="Rôle de ${esc(r.nom)}">${opts}</select>${link}`;
   };
   const quick = r => r.st === "wait" && r.uid !== S.uid ? `<button class="btn ok" data-act="acct" data-v="${r.dem || "tech"}" data-uid="${esc(r.uid)}">Autoriser comme ${esc(ROLES[r.dem || "tech"])}</button>` : "";
   return `<div class="panel wide"><h2>Comptes et rôles</h2>
     <p><b>Techniciens</b> : pas de compte ni de mot de passe. Ils choisissent l'onglet « Technicien » et tapent leur matricule ; seuls les matricules enregistrés dans <b>Affectations › Matricules des techniciens</b> peuvent entrer, et chacun ne voit que ses machines.${nTech ? ` ${nTech} technicien${nTech > 1 ? "s" : ""} déjà entré${nTech > 1 ? "s" : ""} par matricule.` : ""}</p>
     <p><b>Admin et TL</b> : chacun crée son compte (e-mail ou matricule, et un mot de passe) et indique le rôle demandé. Il ne voit rien tant que vous ne l'avez pas autorisé.</p>
-    <p><b>Admin</b> : tout, comme le manager (organisation, réglages, comptes, planning). <b>TL</b> : modifie le planning, voit Affectations et Journal. <b>Technicien</b> : consulte et marque ses préventifs faits ou reportés.</p>
+    <p><b>Admin</b> : tout, comme le manager (organisation, réglages, comptes, planning). <b>TL</b> : modifie le planning de son équipe seulement (les sections dont il est TL : reliez son compte à son nom de TL), voit Affectations et Journal. <b>Technicien</b> : consulte et marque ses préventifs faits ou reportés.</p>
     <div class="scroll"><table class="t"><thead><tr><th>Nom</th><th>E-mail ou matricule</th><th>Demande</th><th>Rôle</th><th></th></tr></thead><tbody>${ownerRow}${rows.map(r => `<tr><td><b>${esc(r.nom)}</b><div class="z">${esc(r.at ? "créé le " + fmtStamp(r.at) : "")}</div></td><td class="mono">${esc(r.ident)}</td><td>${r.dem ? esc(ROLES[r.dem]) : `<span class="z">—</span>`}</td><td>${cell(r)}</td><td class="r">${quick(r)}</td></tr>`).join("")}</tbody></table></div>
     ${rows.length ? "" : `<p class="z">Aucun autre compte pour l'instant. Donnez le lien de l'application à vos TL et techniciens : ${esc(APP_URL)}</p>`}</div>`;
 }
@@ -1190,6 +1224,59 @@ document.addEventListener("click", async ev => {
     catch(e){ msg.className = "gate-msg"; msg.textContent = authMsg(e); }
   }
 });
+
+/* ---------- Notifications (appareil) ----------
+   Résumé du jour, préventifs qui passent en retard, comptes à autoriser. Quand l'application est ouverte, même réduite. */
+const NOTIF_KEY = "preventif-notif";
+const notifSupported = () => "Notification" in window;
+const notifOn = () => notifSupported() && Notification.permission === "granted" && lsGet(NOTIF_KEY, "") === "on";
+let swReg = null;
+async function swReady(){
+  if(swReg || !FIREBASE || !("serviceWorker" in navigator) || location.protocol !== "https:") return swReg;
+  try{ swReg = await navigator.serviceWorker.register("sw.js"); }catch(e){}
+  return swReg;
+}
+async function showNote(title, body, tag){
+  if(!notifOn()) return;
+  const opt = {body, tag, icon: "site/preventif.ico"};
+  try{ const r = await swReady(); if(r) await r.showNotification(title, opt); else new Notification(title, opt); }catch(e){ console.warn("notification", e); }
+}
+async function enableNotif(){
+  if(!notifSupported()){ toast("Ce navigateur ne gère pas les notifications.", "late"); return; }
+  const perm = await Notification.requestPermission();
+  if(perm !== "granted"){ toast("Notifications refusées par le navigateur.", "late"); render(); return; }
+  lsSet(NOTIF_KEY, "on"); await swReady(); toast("Notifications activées sur cet appareil.");
+  notifyCheck(true); render();
+}
+const NT = {late: null, pend: null};
+function notifyCheck(force){
+  if(!notifOn() || !S.loaded || !S.D || (S.mode !== "db" && S.mode !== "local")) return;
+  const f0 = S.filters; S.filters = {svc: "", who: S.techName || "", q: ""};
+  let its; try{ its = S.D.items.filter(it => matchIt(it)); } finally{ S.filters = f0; }
+  const late = its.filter(it => it.st === "retard"), wk = its.filter(it => it.st === "semaine");
+  const day = todayISO() + "|" + (S.uid || "local");
+  if(force || lsGet("preventif-notif-day", "") !== day){
+    lsSet("preventif-notif-day", day);
+    if(late.length || wk.length) showNote(`Préventifs · S${CW}`, `${late.length} en retard · ${wk.length} à faire cette semaine${S.techName ? " (vos machines)" : ""}`, "resume");
+  }
+  const lk = new Set(late.map(it => it.key));
+  if(NT.late){
+    const nw = late.filter(it => !NT.late.has(it.key));
+    if(nw.length) showNote("Préventif en retard", nw.length === 1 ? `${nw[0].m.num} · ${TYPES[nw[0].code]} prévu S${nw[0].ew}${itemTech(nw[0]) ? " · " + itemTech(nw[0]) : ""}` : `${nw.length} préventifs viennent de passer en retard.`, "retard");
+  }
+  NT.late = lk;
+  const pend = pendingAccounts();
+  if(NT.pend != null && pend > NT.pend) showNote("Compte à autoriser", "Un nouveau compte attend votre autorisation (Réglages › Comptes et rôles).", "compte");
+  NT.pend = pend;
+}
+function notifPanel(){
+  const sup = notifSupported(), perm = sup ? Notification.permission : "denied", on = notifOn();
+  return `<div class="panel"><h2>Notifications</h2>
+    <p>Sur cet appareil (PC ou téléphone) : un résumé chaque jour (retards et préventifs de la semaine${S.techName ? " de vos machines" : ""}), une alerte quand un préventif passe en retard${isAdmin() ? ", et quand un compte attend votre autorisation" : ""}.</p>
+    <p class="z">Elles arrivent quand l'application est ouverte, même réduite ou en arrière-plan.</p>
+    <div>${!sup ? `<span class="z">Ce navigateur ne gère pas les notifications.</span>` : perm === "denied" ? `<span class="lateN">Bloquées par le navigateur : autorisez-les dans les paramètres du site (cadenas à gauche de l'adresse).</span>` : on ? `<span class="pill done">Activées</span> <button class="btn" data-act="notiftest">Tester</button> <button class="btn" data-act="notifoff">Désactiver</button>` : `<button class="btn pri" data-act="notifon">Activer les notifications</button>`}</div>
+  </div>`;
+}
 
 /* ---------- Storage ---------- */
 async function initStore(){
@@ -1369,11 +1456,13 @@ let rq = 0;
 function scheduleRender(){ if(rq) return; rq = requestAnimationFrame(() => { rq = 0; render(); }); }
 function setCnt(id, n){ const el = document.getElementById(id); if(el){ el.hidden = !n; el.textContent = n; } }
 function render(){
+  S.scope = tlScope();
   const D = derive(); S.D = D;
   const settled = !(S.mode === "loading" || (S.mode === "db" && !S.loaded));
   if(settled && !allowed(S.view)) S.view = "hub";
   renderNav(); renderPlate(D); renderBanner(); syncFilters(); renderSide(); renderTitle();
   for(const sec of document.querySelectorAll("section[data-view]")) sec.hidden = sec.dataset.view !== S.view;
+  if(notifOn()) notifyCheck();
   for(const t of document.querySelectorAll(".tab")) t.setAttribute("aria-selected", String(t.dataset.go === S.view));
   setCnt("cnt-late", D.items.filter(it => it.st === "retard" && matchIt(it)).length);
   setCnt("cnt-req", pendingReqs());
@@ -1389,6 +1478,7 @@ function renderPlate(){
 function renderBanner(){
   const b = $("#banner"); let t = "", cls = "banner";
   if(BUILD.moved){ b.innerHTML = `<div class="banner danger">L'application a déménagé : cette page n'est plus mise à jour. <a href="${esc(APP_URL)}" target="_blank" rel="noopener">Ouvrir la nouvelle application</a></div>`; return; }
+  if(S.scope && !S.scope.size && S.loaded){ b.innerHTML = `<div class="banner warn">Votre compte TL n'est relié à aucune section. Demandez au manager maintenance de le relier à votre nom de TL (Réglages › Comptes et rôles).</div>`; return; }
   if(BUILD.preview){ b.innerHTML = `<div class="banner warn"><b>Aperçu :</b> la base Firebase n'est pas encore reliée. Vous pouvez consulter le planning, mais rien n'est enregistré et les préventifs faits n'apparaissent pas ici.</div>`; return; }
   if(S.mode === "loading" || (S.mode === "db" && !S.loaded)) t = "Connexion à la base de suivi…";
   else if(S.mode === "local") { t = "COPIE HORS LIGNE : ce que vous saisissez ici reste sur cet ordinateur et n'apparaît PAS dans l'application en ligne ni chez vos équipes."; cls += " danger"; }
@@ -1397,13 +1487,16 @@ function renderBanner(){
 }
 
 let filtersBuilt = false;
-let filtersSvc = null;
+let filtersSvc = null, filtersScope = "*";
 function syncFilters(){
   const fs = $("#f-svc"), fw = $("#f-who");
   if(S.techName){ S.filters.svc = ""; S.filters.who = S.techName; } // technicien : seulement ses machines
-  if(!filtersBuilt || filtersSvc !== S.filters.svc){
-    fs.innerHTML = `<option value="">Tous les services</option>` + SECTIONS.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
-    const svcs = SECTIONS.filter(x => !S.filters.svc || x.id === S.filters.svc);
+  const inScope = x => !S.scope || S.scope.has(x.id), scopeKey = S.scope ? [...S.scope].join(",") : "*";
+  if(S.scope && S.filters.svc && !S.scope.has(S.filters.svc)) S.filters.svc = "";
+  if(!filtersBuilt || filtersSvc !== S.filters.svc || filtersScope !== scopeKey){
+    filtersScope = scopeKey;
+    fs.innerHTML = `<option value="">${S.scope ? "Toutes mes sections" : "Tous les services"}</option>` + SECTIONS.filter(inScope).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
+    const svcs = SECTIONS.filter(x => (!S.filters.svc || x.id === S.filters.svc) && inScope(x));
     const valid = new Set([""]);
     let html = `<option value="">${S.filters.svc ? "Tous les responsables · " + esc(SVC[S.filters.svc].name) : "Tous les responsables"}</option>`;
     for(const x of svcs){
@@ -1501,7 +1594,7 @@ function renderAlertes(D){
 
   const wkShown = S.hideDone ? wk.filter(it => it.st !== "fait") : wk;
   const hideBtn = `<button class="btn" data-act="print">Imprimer (A4)</button><button class="btn" data-act="hidedone">${S.hideDone ? "Afficher les faits" : "Masquer les faits"}</button>`;
-  const repBtn = `<button class="btn pri" data-act="report">Rapport à envoyer</button>`;
+  const repBtn = `<button class="btn pri" data-act="report">Envoyer (WhatsApp / e-mail)</button>${notifSupported() && !notifOn() && Notification.permission !== "denied" ? `<button class="btn" data-act="notifon">Activer les notifications</button>` : ""}`;
   $("#v-alertes").innerHTML = alarm + kpis + svcTable +
     listPanel("p-late", "En retard", `Planifiés avant S${CW}, non faits`, late, {empty:"Aucun préventif en retard.", tools:repBtn}) +
     listPanel("p-week", `Cette semaine · S${CW}`, esc(CW<=NWEEKS?weekRange(CW):""), wkShown, {empty: wk.length ? "Tous les préventifs de la semaine sont faits." : "Aucun préventif planifié cette semaine.", tools:hideBtn}) +
@@ -1713,8 +1806,9 @@ function renderReglages(D){
     <div class="panel"><h2>Exporter</h2>
       <p>Toutes les interventions de l'année (avec les filtres actuels) et leur statut, au format CSV pour Excel.</p>
       <div>${canExport ? `<button class="btn pri" data-act="export">Télécharger le fichier CSV</button> <button class="btn" data-act="xlsxexp">Télécharger le planning Excel</button>` : `<span class="z">Le téléchargement n'est pas disponible dans cette vue.</span>`}</div>
-      <p>Pour envoyer les alertes par e-mail ou WhatsApp, utilisez <b>Rapport à envoyer</b> dans l'onglet Alertes.</p>
+      <p>Pour envoyer les alertes par e-mail ou WhatsApp, utilisez <b>Envoyer (WhatsApp / e-mail)</b> dans l'onglet Alertes.</p>
     </div>
+    ${notifPanel()}
     <div class="panel"><h2>Codes du planning</h2>
       <div class="codes">${Object.entries(TYPES).map(([k,v]) => `${tcode(k)}<span>${esc(v)}</span>`).join("")}<span class="tcode" style="background:repeating-linear-gradient(135deg,var(--line) 0 3px,transparent 3px 6px)"></span><span>C · Congé annuel (pas d'intervention)</span></div>
     </div>
@@ -1759,7 +1853,7 @@ function tlGroupBox(g){
 function renderAffect(D){
   const own = canOrg(), canM = canPlan(), f = S.filters;
   const tree = orgTree(), an = anomalies();
-  const svcs = SECTIONS.filter(sv => !f.svc || sv.id === f.svc);
+  const svcs = SECTIONS.filter(sv => (!f.svc || sv.id === f.svc) && (!S.scope || S.scope.has(sv.id)));
   const pl = (n, w) => n + " " + w + (n > 1 ? "s" : "");
   const tlsIn = svc => [...tree.get(svc).keys()].filter(Boolean);
   const techsOf = svc => uniq([...tree.get(svc).values()].flatMap(tm => [...tm.keys()]));
@@ -1788,7 +1882,7 @@ function renderAffect(D){
   }
   chart += `</div></div></div>`;
 
-  const anF = an.filter(a => !f.svc || a.svc === f.svc);
+  const anF = an.filter(a => (!f.svc || a.svc === f.svc) && (!S.scope || S.scope.has(a.svc)));
   const notOwn = `<span class="z">À corriger par le manager</span>`;
   const anRows = anF.map(a => {
     const sn = SVC[a.svc].name;
@@ -1937,8 +2031,8 @@ function openMats(){
   const n0 = groups.reduce((a, g) => a + g[1].length, 0), nm = groups.reduce((a, g) => a + g[1].filter(r => matOf(r[0])).length, 0);
   dlg.className = "wide";
   dlg.innerHTML = `<form class="dlg" id="mat-form" method="dialog">
-    <div class="dlg-h"><div><h3 id="dlg-title">Matricules des techniciens</h3><div class="sub">${nm} / ${n0} renseignés · tapez un matricule dans la recherche (en haut) pour afficher directement le planning de la personne</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
-    <div class="dlg-b">${groups.map(([sec, rows]) => `<fieldset class="rep"><legend>${esc(sec.name)}</legend><div class="erows">${rows.map(([n, l]) => `<div class="erow e-mat" data-name="${esc(n)}"><span class="e-n" title="${esc(n)}">${esc(n)}</span><span class="z">${esc(l)}</span><input type="text" value="${esc(matOf(n))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule de ${esc(n)}"></div>`).join("")}</div></fieldset>`).join("")}</div>
+    <div class="dlg-h"><div><h3 id="dlg-title">Matricules et contacts</h3><div class="sub">${nm} / ${n0} renseignés · tapez un matricule dans la recherche (en haut) pour afficher directement le planning de la personne</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b">${groups.map(([sec, rows]) => `<fieldset class="rep"><legend>${esc(sec.name)}</legend><div class="erows">${rows.map(([n, l]) => `<div class="erow e-mat" data-name="${esc(n)}"><span class="e-n" title="${esc(n)}">${esc(n)}</span><span class="z">${esc(l)}</span><input type="text" value="${esc(matOf(n))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule de ${esc(n)}"><input class="e-tel" type="tel" value="${esc(contactOf(n).tel || "")}" maxlength="20" autocomplete="off" placeholder="WhatsApp (06…)" aria-label="WhatsApp de ${esc(n)}"><input class="e-mail" type="email" value="${esc(contactOf(n).mail || "")}" maxlength="80" autocomplete="off" placeholder="E-mail" aria-label="E-mail de ${esc(n)}"></div>`).join("")}</div></fieldset>`).join("")}</div>
     <div class="dlg-f"><span class="z" id="mat-msg"></span><span class="sp"></span><button type="button" class="btn" data-act="close">Annuler</button><button type="submit" class="btn pri">Enregistrer</button></div>
   </form>`;
   if(!dlg.open) dlg.showModal();
@@ -1949,10 +2043,15 @@ function openMats(){
     for(const [n, v] of rows) if(v) by.set(matKey(v), (by.get(matKey(v)) || []).concat([n]));
     const dup = [...by.values()].find(a => a.length > 1);
     if(dup){ $("#mat-msg").textContent = `Même matricule pour ${dup.join(" et ")}.`; $("#mat-msg").className = "lateN"; return; }
+    const crow = [...document.querySelectorAll("#mat-form .e-mat")].map(r => [r.dataset.name, r.querySelector(".e-tel").value.trim(), r.querySelector(".e-mail").value.trim().toLowerCase()]);
+    const badTel = crow.find(([, t]) => t && !telNorm(t)), badMail = crow.find(([, , m]) => m && !MAIL_RE.test(m));
+    if(badTel || badMail){ $("#mat-msg").textContent = badTel ? `Numéro WhatsApp à vérifier pour ${badTel[0]} (ex. 0612345678 ou +212612345678).` : `E-mail à vérifier pour ${badMail[0]}.`; $("#mat-msg").className = "lateN"; return; }
     const ch = rows.filter(([n, v]) => v !== matOf(n));
-    if(!ch.length){ closeDlg(); toast("Aucun changement."); return; }
+    const chC = crow.filter(([n, t, m]) => t !== (contactOf(n).tel || "") || m !== (contactOf(n).mail || ""));
+    if(!ch.length && !chC.length){ closeDlg(); toast("Aucun changement."); return; }
     const txt = ch.slice(0, 6).map(([n, v]) => `${n} ${v || "(retiré)"}`).join(", ") + (ch.length > 6 ? ` … (+${ch.length - 6})` : "");
-    if(await writeOrg(o => setMats(o, ch), `Matricules : ${txt}`)){ closeDlg(); toast(`${ch.length} matricule${ch.length > 1 ? "s" : ""} enregistré${ch.length > 1 ? "s" : ""}.`); }
+    const lbl = [ch.length ? `Matricules : ${txt}` : "", chC.length ? `contacts : ${chC.length}` : ""].filter(Boolean).join(" · ");
+    if(await writeOrg(o => { setMats(o, ch); setContacts(o, chC); }, lbl)){ closeDlg(); toast(`${ch.length + chC.length} changement${ch.length + chC.length > 1 ? "s" : ""} enregistré${ch.length + chC.length > 1 ? "s" : ""}.`); }
   });
 }
 function openSectionForm(svc){
@@ -2426,12 +2525,44 @@ function buildReport(){
   return L.join("\n");
 }
 
+const appLine = () => `\n\nApplication : ${APP_URL}${FIREBASE ? "\n(Techniciens : onglet « Technicien », entrez votre matricule)" : ""}`;
+function reportFor(who){ // who : un technicien (sa liste à lui) ou "" (rapport selon les filtres)
+  if(!who) return buildReport() + appLine();
+  const w = S.filters.who; S.filters.who = who;
+  try{ return `Bonjour ${who},\n\n` + buildReport() + appLine(); } finally{ S.filters.who = w; }
+}
+function sendWa(who){
+  const tel = who ? telNorm(contactOf(who).tel) : "";
+  window.open(`https://wa.me/${tel}?text=${encodeURIComponent(reportFor(who))}`, "_blank", "noopener");
+}
+async function sendMail(who){
+  const txt = reportFor(who), mail = who ? (contactOf(who).mail || "") : "", subj = `Préventifs S${CW}${who ? " · " + who : ""}`;
+  let body = txt;
+  if(encodeURIComponent(txt).length > 1800){ // trop long pour un lien e-mail : on le copie
+    try{ await navigator.clipboard.writeText(txt); }catch(e){}
+    body = "Le rapport a été copié : collez-le ici (Ctrl+V).\n\n"; toast("Rapport copié : collez-le dans l'e-mail (Ctrl+V).");
+  }
+  const a = document.createElement("a"); a.href = `mailto:${mail}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`; a.click();
+}
 function openReport(){
-  const txt = buildReport();
+  const txt = reportFor("");
+  const its = S.D.items.filter(it => matchIt(it) && (it.st === "retard" || it.st === "semaine"));
+  const si = {}; SECTIONS.forEach((x, i) => { si[x.id] = i; });
+  const by = new Map();
+  for(const it of its){ const n = itemTech(it); if(!n) continue; const e = by.get(n) || {n, svc: it.m.svc, late: 0, wk: 0}; if(it.st === "retard") e.late++; else e.wk++; by.set(n, e); }
+  const rows = [...by.values()].sort((a, b) => (si[a.svc] ?? 99) - (si[b.svc] ?? 99) || a.n.localeCompare(b.n, "fr"));
+  const ctc = n => { const c = contactOf(n); return `${c.tel ? `<span class="z mono">${esc(c.tel)}</span>` : ""}${c.mail ? `<span class="z"> ${esc(c.mail)}</span>` : ""}${!c.tel && !c.mail ? `<span class="z">pas de contact</span>` : ""}`; };
+  dlg.className = "wide";
   dlg.innerHTML = `<div class="dlg">
-    <div class="dlg-h"><div><h3 id="dlg-title">Rapport à envoyer</h3><div class="sub">Retards et préventifs de la S${CW}, par section et par technicien (A·S·T ou M), selon les filtres actuels. Pour l'envoyer à un seul technicien, choisissez-le d'abord dans le filtre « Responsable ». Copiez-le dans un e-mail ou WhatsApp.</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
-    <div class="dlg-b"><textarea class="report" id="rep-txt" readonly>${esc(txt)}</textarea></div>
-    <div class="dlg-f"><span class="sp"></span><button type="button" class="btn pri" data-act="copy">Copier le rapport</button></div>
+    <div class="dlg-h"><div><h3 id="dlg-title">Envoyer les alertes</h3><div class="sub">Retards et préventifs de la S${CW}, selon les filtres actuels. WhatsApp et e-mail s'ouvrent avec le message déjà écrit : il reste à cliquer « Envoyer ».</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b">
+      <fieldset class="rep"><legend>Rapport général</legend><textarea class="report" id="rep-txt" readonly>${esc(txt)}</textarea>
+        <div class="row-btns"><button type="button" class="btn ok" data-act="sendwa" data-who="">WhatsApp</button><button type="button" class="btn" data-act="sendmail" data-who="">E-mail</button><button type="button" class="btn" data-act="copy">Copier</button></div></fieldset>
+      <fieldset class="rep"><legend>À chaque technicien · sa liste à lui</legend>
+        ${rows.length ? `<div class="scroll"><table class="t"><thead><tr><th>Technicien</th><th class="r">En retard</th><th class="r">S${CW}</th><th>Contact</th><th></th></tr></thead><tbody>${rows.map(e => `<tr><td><b>${esc(e.n)}</b>${matTag(e.n)}<div class="z">${esc(SVC[e.svc] ? SVC[e.svc].name : "")}${techRole(e.svc, e.n) ? " · " + esc(techRole(e.svc, e.n)) : ""}</div></td><td class="r num ${e.late ? "lateN" : "z"}">${e.late}</td><td class="r num">${e.wk}</td><td>${ctc(e.n)}</td><td class="r"><button type="button" class="btn ok" data-act="sendwa" data-who="${esc(e.n)}">WhatsApp</button> <button type="button" class="btn" data-act="sendmail" data-who="${esc(e.n)}">E-mail</button></td></tr>`).join("")}</tbody></table></div>`
+          : `<p class="z">Aucun technicien n'a de préventif en retard ou à faire cette semaine.</p>`}
+        <p class="z" style="margin:0;font-size:12.5px">Numéros WhatsApp et e-mails : Affectations › Matricules et contacts. Sans numéro, WhatsApp vous laisse choisir le contact ou le groupe.</p></fieldset>
+    </div>
   </div>`;
   if(!dlg.open) dlg.showModal();
 }
@@ -2982,6 +3113,11 @@ document.addEventListener("click", async ev => {
     case "mats": openMats(); break;
     case "planall": S.planAllM = el.dataset.v === "1"; render(); break;
     case "report": openReport(); break;
+    case "sendwa": sendWa(el.dataset.who); break;
+    case "sendmail": sendMail(el.dataset.who); break;
+    case "notifon": enableNotif(); break;
+    case "notifoff": lsSet(NOTIF_KEY, "off"); toast("Notifications désactivées sur cet appareil."); render(); break;
+    case "notiftest": showNote("Préventif · essai", "Les notifications fonctionnent sur cet appareil.", "test"); break;
     case "copy": {
       const ta = $("#rep-txt");
       try{ await navigator.clipboard.writeText(ta.value); toast("Rapport copié."); }
@@ -3096,6 +3232,7 @@ document.addEventListener("change", ev => {
   if(el.dataset.chg === "tl") setTechTL(el.dataset.svc, el.dataset.tech, el.value);
   else if(el.dataset.chg === "mtech") setMachineTech(el.dataset.mid, el.value);
   else if(el.dataset.chg === "acctrole"){ if(el.value) setRole(el.dataset.uid, el.value); }
+  else if(el.dataset.chg === "accttl") setTlLink(el.dataset.uid, el.value);
   else if(el.dataset.chg === "theme"){ S.theme = el.value; saveUI(); applyTheme(); render(); }
 });
 $("#f-svc").addEventListener("change", e => { S.filters.svc = e.target.value; saveUI(); render(); });

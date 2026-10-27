@@ -42,6 +42,10 @@
           ".write": "auth != null && auth.uid !== $uid && $uid !== root.child('meta/owner').val() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
           ".validate": "newData.isString() && newData.val().length <= 40"
         },
+        "tlName": {
+          ".write": "auth != null && auth.uid !== $uid && $uid !== root.child('meta/owner').val() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
         "$other": {
           ".validate": false
         }
