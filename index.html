@@ -511,6 +511,14 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .org-sectl.warn b{color:var(--late)}
 .svc-band .meta b{font-weight:600}
 .org-tl{border:1px solid var(--line);border-radius:6px;background:var(--surface-2);padding:8px 10px}
+.org-groups{display:flex;flex-wrap:wrap;gap:14px;width:100%;border-top:2px solid var(--line);padding-top:14px;align-items:flex-start}
+.org-grp{flex:var(--n) 1 min(100%, calc(var(--n) * 240px));min-width:0;display:flex;flex-direction:column;align-items:stretch;border:1px dashed var(--line);border-radius:8px;padding:10px}
+.org-grp > .org-sectl{display:flex;flex-direction:column;align-items:center;text-align:center}
+.org-grp > .org-sectl .tls{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin-top:2px}
+.org-grp > .org-sectl .pp{margin-top:0}
+.org-grp > .org-sectl .grp-n{font-size:12px;color:var(--ink-3);margin-top:3px}
+.org-grp > .org-stem{align-self:center}
+.org-grp > .org-cols{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
 .org-tln{font-weight:600;font-size:14px;overflow-wrap:anywhere}
 .org-tln.warn,.org-tl li.warn{color:var(--late)}
 .org-tl ul{margin:6px 0 0;padding:0 0 0 16px;font-size:13px;color:var(--ink-2)}
@@ -1668,13 +1676,26 @@ function renderReglages(D){
   </div>`;
 }
 
-function secBox(sv){
-  const tag = r => r.shift ? `<span class="shf">${esc(r.shift)}</span>` : "";
-  const subs = id => Object.values(sv.chefInfo || {}).filter(c => c.tl === id).map(c => `<div class="pp sub"><span class="pn">${esc(c.name)}</span>${tag(c)}<span class="z">tech. A·S·T</span></div>`).join("");
-  const orphans = [];
-  return `<div class="org-sectl ${sv.tls.length ? "" : "warn"}"><div class="eyebrow">Responsables de section (TL)</div>
-    ${sv.tls.length ? sv.tls.map(t => `<div class="pp"><span class="pn">${esc(t.name)}</span>${tag(t)}</div>${subs(t.id)}`).join("") : `<b>TL non renseigné</b>`}
-    ${orphans.length ? `<div class="eyebrow" style="margin-top:8px">Responsables shift</div>${orphans.map(r => `<div class="pp"><span class="pn">${esc(r.name)}</span>${tag(r)}</div>`).join("")}` : ""}
+function tlGroups(svcs){ // sections qui ont exactement les mêmes TL : un seul encadré TL pour toutes
+  const groups = new Map();
+  for(const sv of svcs){
+    const key = sv.tls.map(t => norm(t.name).trim()).sort().join("|");
+    if(!groups.has(key)) groups.set(key, {tls: [], secs: []});
+    const g = groups.get(key);
+    g.secs.push(sv);
+    for(const t of sv.tls){
+      let e = g.tls.find(x => norm(x.name).trim() === norm(t.name).trim());
+      if(!e) g.tls.push(e = {name: t.name, shifts: []});
+      if(t.shift && !e.shifts.includes(t.shift)) e.shifts.push(t.shift);
+    }
+  }
+  return [...groups.values()];
+}
+function tlGroupBox(g){
+  const names = g.secs.map(sv => sv.name);
+  return `<div class="org-sectl ${g.tls.length ? "" : "warn"}"><div class="eyebrow">${g.tls.length > 1 ? "Responsables de section (TL)" : "Responsable de section (TL)"}</div>
+    ${g.tls.length ? `<div class="tls">${g.tls.map(t => `<div class="pp"><span class="pn">${esc(t.name)}</span>${t.shifts.map(x => `<span class="shf">${esc(x)}</span>`).join("")}</div>`).join("")}</div>` : `<b>TL non renseigné</b>`}
+    ${names.length > 1 ? `<div class="grp-n">${names.length} sections : ${esc(names.join(" · "))}</div>` : ""}
   </div>`;
 }
 function renderAffect(D){
@@ -1693,15 +1714,19 @@ function renderAffect(D){
     ? `<button class="btn danger" data-act="orgreset" data-svc="${f.svc}">Revenir aux équipes de l'Excel${f.svc ? " · " + esc(SVC[f.svc].name) : ""}</button>` : "";
   let chart = `<div class="panel"><div class="panel-h"><h2>Organigramme</h2><span class="note">Manager › TL de section › techniciens A·S·T et techniciens M (nombre de machines). En rouge : à corriger.</span><div class="tools">${own ? `<button class="btn" data-act="mats">Matricules des techniciens</button><button class="btn pri" data-act="secform" data-svc="">Ajouter une section</button>` : ""}${resetBtn}</div></div><div class="org">
     <div class="org-mgr"><div class="eyebrow">Manager maintenance</div><b>${esc(mgrName())}</b>${own ? `<button class="lk" data-act="orgform" data-k="manager">${S.org && S.org.manager ? "Modifier le nom" : "Indiquer votre nom"}</button>` : ""}</div>
-    <div class="org-stem"></div><div class="org-cols">`;
-  for(const sv of svcs){
+    <div class="org-stem"></div><div class="org-groups">`;
+  for(const g of tlGroups(svcs)){
+  chart += `<div class="org-grp" style="--n:${g.secs.length}">${tlGroupBox(g)}<div class="org-stem"></div><div class="org-cols">`;
+  for(const sv of g.secs){
     const sm = machines.filter(m => m.svc === sv.id && !isOut(m)), two = sm.some(m => m.chef);
     const count = key => { const c = new Map(); for(const m of sm){ const k = m[key]; if(k) c.set(k, (c.get(k) || 0) + 1); } return [...c.entries()].sort((a,b) => a[0].localeCompare(b[0], "fr")); };
-    const box = (title, list, withInfo) => `<div class="org-tl"><div class="org-tln">${esc(title)}</div><ul>${list.map(([n, k]) => { const ci = withInfo && sv.chefInfo ? sv.chefInfo[n] : null; return `<li>${esc(n)}${matTag(n)} <span class="z">(${k})</span>${ci && ci.shift ? ` <span class="shf">${esc(ci.shift)}</span>` : ""}</li>`; }).join("") || `<li class="z">Aucun</li>`}</ul></div>`;
+    const tlName = id => ((sv.tls.find(t => t.id === id) || {}).name || "");
+    const box = (title, list, withInfo) => `<div class="org-tl"><div class="org-tln">${esc(title)}</div><ul>${list.map(([n, k]) => { const ci = withInfo && sv.chefInfo ? sv.chefInfo[n] : null; return `<li>${esc(n)}${matTag(n)} <span class="z">(${k})</span>${ci && ci.shift ? ` <span class="shf">${esc(ci.shift)}</span>` : ""}${ci && ci.tl && tlName(ci.tl) && sv.tls.length > 1 ? ` <span class="z">· TL ${esc(tlName(ci.tl))}</span>` : ""}</li>`; }).join("") || `<li class="z">Aucun</li>`}</ul></div>`;
     chart += `<div class="org-col"><div class="org-svc"><span>${esc(sv.name)}</span>${own ? `<button class="sec-edit" type="button" data-act="secedit" data-svc="${sv.id}">Modifier</button>` : ""}</div>
-      ${secBox(sv)}
       ${two ? box("Techniciens A·S·T · annuel, semestriel, trimestriel", count("chef"), true) + box("Techniciens M · mensuel", count("tech"), false) : box("Techniciens · tous les préventifs", count("tech"), false)}
     </div>`;
+  }
+  chart += `</div></div>`;
   }
   chart += `</div></div></div>`;
 
