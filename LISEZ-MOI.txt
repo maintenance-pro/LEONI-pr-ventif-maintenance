@@ -5,8 +5,11 @@
    Double-cliquez sur « Préventif 2026 » (sur le bureau ou dans ce dossier).
    L'application s'ouvre dans sa propre fenêtre (Microsoft Edge).
    Adresse : https://maintenance-pro.github.io/LEONI-pr-ventif-maintenance/
-   Sur téléphone : ouvrez l'adresse, puis menu du navigateur >
-   « Ajouter à l'écran d'accueil ».
+   Installer l'application (téléphone ou PC) : bouton « Installer » en bas du
+   menu (en haut sur téléphone) ou sur la page de connexion. Android et PC :
+   l'installation se lance ; iPhone : Safari > Partager > « Sur l'écran
+   d'accueil » (les étapes s'affichent).
+   Se déconnecter : bouton rouge « Déconnexion » (même endroit).
 
    Les données sont enregistrées dans Firebase (projet « leoni-preventif »,
    Realtime Database en Europe) et partagées en direct avec toute l'équipe.

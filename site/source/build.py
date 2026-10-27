@@ -57,4 +57,7 @@ write("preventif-2026-standalone.html", skeleton() + page(offline) + "\n</body><
 if a.firebase or a.preview:
     fb = ({"firebase": read(a.firebase), "seed": read(a.seed) if a.seed else None, "appUrl": a.app_url, "moved": False} if a.firebase
           else {"firebase": None, "seed": None, "appUrl": a.app_url, "moved": False, "preview": True})
-    write("index.html", skeleton('<link rel="icon" href="site/preventif.ico">') + page(fb) + "\n</body></html>\n")
+    head = ('<link rel="icon" href="site/preventif.ico"><link rel="manifest" href="manifest.json">'
+            '<meta name="theme-color" content="#0E151B"><link rel="apple-touch-icon" href="site/icon-192.png">'
+            '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Préventif">')
+    write("index.html", skeleton(head) + page(fb) + "\n</body></html>\n")

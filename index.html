@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="icon" href="site/preventif.ico"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="icon" href="site/preventif.ico"><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0E151B"><link rel="apple-touch-icon" href="site/icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Préventif"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
 <title>Préventif Maintenance 2026</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -102,6 +102,15 @@ button,input,select,textarea{font:inherit;color:inherit}
 .sbtn{appearance:none;border:1px solid var(--side-line);background:transparent;color:var(--side-ink);border-radius:6px;padding:6px 10px;font-size:12.5px;font-weight:500;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
 .sbtn:hover{background:var(--side-2)}
 .sbtn svg{width:15px;height:15px}
+.side-acts{display:flex;gap:6px;flex-wrap:wrap}
+.side-acts:empty{display:none}
+.sbtn.out{background:#C62828;border-color:#C62828;color:#fff;font-weight:600}
+.sbtn.out:hover{background:#A51F1F}
+.sbtn.inst{border-color:var(--accent);color:var(--side-ink)}
+.side-acts-m{display:none}
+.me .ident{font-size:12px;color:var(--side-mute);font-family:var(--f-mono)}
+.inst-steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:15px}
+.inst-steps b{color:var(--ink)}
 .doc-ref{font-family:var(--f-mono);font-size:10.5px;color:var(--side-mute);letter-spacing:.03em}
 .main{min-width:0;display:flex;flex-direction:column}
 .topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 24px;align-items:center;justify-content:space-between;padding-block:12px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
@@ -199,6 +208,8 @@ body.tv .it-act{display:none}
   .nav{flex-direction:row;flex-basis:100%;overflow-x:auto;scrollbar-width:none;gap:4px}
   .nav::-webkit-scrollbar{display:none}
   .nav-h,.side-foot{display:none}
+  .side-acts-m{display:flex;gap:6px}
+  .side-acts-m .sbtn{padding:6px 9px}
   .tab{width:auto;padding:7px 10px;font-size:14px}
   .topbar{position:static;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
   .content{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
@@ -559,10 +570,12 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
   <aside class="side" aria-label="Menu">
     <div class="side-brand"><span class="logo" id="logo"></span><div><b>PRÉVENTIF</b><span>Maintenance · 2026</span></div></div>
     <div class="plate" id="plate" aria-live="polite"></div>
+    <div class="side-acts side-acts-m" id="side-acts-m"></div>
     <nav class="nav" id="nav" role="tablist" aria-label="Vues"></nav>
     <div class="side-foot">
       <div class="me" id="me"></div>
       <div class="side-tools"><button class="sbtn" type="button" data-act="theme" id="btn-theme"></button><button class="sbtn" type="button" data-act="tv" id="btn-tv"></button></div>
+      <div class="side-acts" id="side-acts"></div>
       <div class="doc-ref">WI 3342 75 · Enclosure 4 · Rév. 03.23</div>
     </div>
   </aside>
@@ -1012,7 +1025,7 @@ function fbAdapter(rdb){ // même forme que la base claude.ai : doc(), collectio
   return {doc: D, collection: C};
 }
 async function initFirebase(){
-  S.mode = "loading"; render(); gate("loading");
+  S.mode = "loading"; render(); gate("loading"); swReady();
   try{
     if(!window.firebase){
       const b = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
@@ -1172,7 +1185,8 @@ function gate(kind, msg){
       <div class="gate-links">${up ? `<button type="button" class="lk" data-g="login">J'ai déjà un compte</button>` : `<button type="button" class="lk" data-g="signup">Créer un compte</button><button type="button" class="lk" data-g="reset">Mot de passe oublié ?</button>`}</div>
       <p class="gate-note">${up ? "Le manager maintenance doit ensuite autoriser votre compte. Techniciens : pas de compte à créer, utilisez l'onglet « Technicien »." : "Avec un matricule, tapez seulement le matricule."}</p></form>`;
   }
-  g.innerHTML = `<div class="gate-card">${brand}${body}</div>`;
+  const inst = isStandalone() || kind === "loading" ? "" : `<button type="button" class="lk" data-g="install" style="color:var(--accent);font-size:13.5px;align-self:center">${ico("install").replace("<svg", '<svg style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"')}Installer l'application sur cet appareil</button>`;
+  g.innerHTML = `<div class="gate-card">${brand}${body}${inst}</div>`;
   g.hidden = false;
   const f = $("#g-mat") || $("#g-nom") || $("#g-id"); if(f) f.focus();
 }
@@ -1215,6 +1229,7 @@ document.addEventListener("click", async ev => {
   const k = b.dataset.g;
   if(k === "login" || k === "signup" || k === "tech"){ if(k !== "signup") lsSet(LOGIN_KEY, k); gate(k); }
   else if(k === "reload") location.reload();
+  else if(k === "install") installApp();
   else if(k === "out") S.fb.auth.signOut();
   else if(k === "reset"){
     const msg = $("#g-msg"), v = $("#g-id").value.trim(), email = identEmail(v);
@@ -1276,6 +1291,35 @@ function notifPanel(){
     <p class="z">Elles arrivent quand l'application est ouverte, même réduite ou en arrière-plan.</p>
     <div>${!sup ? `<span class="z">Ce navigateur ne gère pas les notifications.</span>` : perm === "denied" ? `<span class="lateN">Bloquées par le navigateur : autorisez-les dans les paramètres du site (cadenas à gauche de l'adresse).</span>` : on ? `<span class="pill done">Activées</span> <button class="btn" data-act="notiftest">Tester</button> <button class="btn" data-act="notifoff">Désactiver</button>` : `<button class="btn pri" data-act="notifon">Activer les notifications</button>`}</div>
   </div>`;
+}
+
+/* ---------- Installer l'application (téléphone, PC) ---------- */
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; });
+window.addEventListener("appinstalled", () => { installEvt = null; toast("Application installée : elle est sur l'écran d'accueil / le bureau."); scheduleRender(); });
+const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+async function installApp(){
+  if(isStandalone()){ toast("L'application est déjà installée sur cet appareil."); return; }
+  if(installEvt){
+    const e = installEvt; installEvt = null;
+    try{ e.prompt(); const r = await e.userChoice; if(r && r.outcome === "accepted") return; }catch(err){}
+  }
+  openInstallHelp();
+}
+function openInstallHelp(){
+  const ua = navigator.userAgent || "";
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1), android = /Android/.test(ua);
+  const steps = ios ? ["Ouvrez cette page dans <b>Safari</b>.", "Touchez <b>Partager</b> (le carré avec une flèche vers le haut).", "Choisissez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b>."]
+    : android ? ["Ouvrez cette page dans <b>Chrome</b>.", "Touchez le menu <b>⋮</b> en haut à droite.", "Choisissez <b>« Installer l'application »</b> (ou « Ajouter à l'écran d'accueil »), puis confirmez."]
+    : ["Ouvrez cette page dans <b>Chrome</b> ou <b>Microsoft Edge</b>.", "Cliquez l'icône <b>Installer</b> à droite de la barre d'adresse (un écran avec une flèche), ou le menu <b>⋮ / ⋯</b> › <b>Applications</b> › <b>Installer</b>.", "L'application s'ouvre dans sa propre fenêtre et une icône est ajoutée au bureau et au menu Démarrer."];
+  dlg.className = "";
+  dlg.innerHTML = `<div class="dlg">
+    <div class="dlg-h"><div><h3 id="dlg-title">Installer l'application</h3><div class="sub">${ios ? "iPhone / iPad" : android ? "Téléphone Android" : "PC"} · l'application s'ouvrira comme une vraie application, sans barre de navigateur</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b"><ol class="inst-steps">${steps.map(t => `<li>${t}</li>`).join("")}</ol>
+      <p class="z" style="margin:0">Adresse : <span class="mono">${esc(APP_URL)}</span></p></div>
+    <div class="dlg-f"><span class="sp"></span><button type="button" class="btn pri" data-act="close">Compris</button></div>
+  </div>`;
+  if(!dlg.open) dlg.showModal();
 }
 
 /* ---------- Storage ---------- */
@@ -2189,6 +2233,8 @@ const ICONS = {
   reglages:'<path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/>',
   tv:'<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
   theme:'<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+  install:'<path d="M12 3v11M7.5 9.5 12 14l4.5-4.5M4 15v3.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V15"/>',
+  logout:'<path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14M10 16.5 5.5 12 10 7.5M5.5 12H15"/>',
   logo:'<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4M9 15l2 2 4-4"/>'
 };
 const ico = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
@@ -2226,7 +2272,10 @@ function renderSide(){
   const r = role();
   const sync = S.mode === "db" && S.loaded ? ["", "Synchronisé en direct"] : S.mode === "local" ? ["warn", "Hors ligne · cet ordinateur"] : S.mode === "readonly" ? ["warn", "Lecture seule"] : ["warn", "Connexion…"];
   const rl = FIREBASE && S.uid ? (S.isOwner ? "Manager · Admin" : {manager:"Admin", tl:"TL", tech:"Technicien", viewer:"Lecture seule"}[r]) : ROLE_LABEL[r];
-  $("#me").innerHTML = `<span class="role">${esc(rl)}</span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b><span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>${FIREBASE && S.uid ? `<button class="lk me-out" type="button" data-act="logout">Se déconnecter${S.meIdent ? " · " + esc(S.meIdent) : ""}</button>` : ""}`;
+  $("#me").innerHTML = `<span class="role">${esc(rl)}</span><b>${esc(S.meName || (r === "manager" ? mgrName() : "Utilisateur"))}</b>${FIREBASE && S.meIdent ? `<span class="ident">${esc(S.meIdent)}</span>` : ""}<span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>`;
+  const acts = (isStandalone() ? "" : `<button class="sbtn inst" type="button" data-act="install" title="Installer l'application sur ce téléphone ou ce PC">${ico("install")}Installer</button>`)
+    + (FIREBASE && S.uid ? `<button class="sbtn out" type="button" data-act="logout" title="Se déconnecter">${ico("logout")}Déconnexion</button>` : "");
+  $("#side-acts").innerHTML = acts; $("#side-acts-m").innerHTML = acts;
   $("#btn-theme").innerHTML = ico("theme") + esc(THEME_SHORT[S.theme] || THEME_SHORT.auto);
   $("#btn-tv").innerHTML = ico("tv") + "Mode TV";
 }
@@ -3221,6 +3270,7 @@ document.addEventListener("click", async ev => {
     case "approve": setChef(el.dataset.uid, true); break;
     case "acct": setRole(el.dataset.uid, el.dataset.v); break;
     case "logout": if(S.fb) S.fb.auth.signOut(); break;
+    case "install": installApp(); break;
     case "revoke": setChef(el.dataset.uid, false); break;
     case "savestart": { const v = Number($("#set-start").value); if(await writeConfig({start:v})) toast("Début du suivi : S"+v); break; }
   }
