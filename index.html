@@ -418,6 +418,11 @@ fieldset.ai{border-color:var(--accent);background:var(--accent-soft)}
 .hp-f textarea{flex:1;resize:none;min-height:46px;max-height:150px;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);padding:10px}
 .hp-f .btn{align-self:flex-end;padding:11px 14px}
 .hp-note{font-size:11.5px;color:var(--ink-3);padding:0 14px 6px}
+.hp-act{max-width:100%;border-color:var(--accent)!important}
+.hp-act .btn{margin-top:4px}
+.hp-act a.btn{color:var(--ink);text-decoration:none;display:inline-block}
+.hp-key{display:flex;gap:6px;margin-top:8px}
+.hp-key input{flex:1;min-width:0;font:inherit;font-size:15px;color:var(--ink);border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:9px 10px}
 fieldset.ai input[type=file]{font-size:14px;max-width:100%}
 fieldset.ai textarea{width:100%;font:inherit;font-size:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);padding:8px 10px;resize:vertical}
 .ai-draft{border:1px solid var(--accent);background:var(--accent-soft);border-radius:var(--r);padding:8px 12px;font-size:14px}
@@ -2387,7 +2392,7 @@ async function hpUsage(day, add){ // compteur de questions du jour (suivi par le
 }
 function helperErr(e){
   const c = e && e.code, st = e && e.status;
-  if(c === "no_key") return isAdmin() ? "HELPER n'est pas encore activé : enregistrez la clé de l'IA dans Réglages › HELPER." : "HELPER n'est pas encore activé : le manager doit enregistrer la clé de l'IA.";
+  if(c === "no_key") return isAdmin() ? "HELPER n'est pas encore activé : suivez « Activer HELPER (gratuit) » en haut de cette fenêtre." : "HELPER n'est pas encore activé : le manager doit enregistrer la clé de l'IA.";
   if(st === 401) return isAdmin() ? "La clé de l'IA est refusée : vérifiez-la dans Réglages › HELPER." : "La clé de l'IA est refusée : prévenez le manager.";
   if(!(e && e.prov === "gemini") && (st === 402 || (e && /credit|billing/i.test(e.message || "")))) return isAdmin() ? "Crédit IA épuisé : ajoutez du crédit sur console.anthropic.com." : "Crédit IA épuisé : prévenez le manager.";
   return aiErrMsg(e);
@@ -2408,11 +2413,15 @@ function renderHelper(){
   const tab = $("#tab-helper"); if(tab) tab.setAttribute("aria-selected", String(HP.open));
   if(!HP.open){ p.hidden = true; p.innerHTML = ""; return; }
   const m = HP.ctx && byId[HP.ctx.mid], first = (S.techName || S.meName || "").split(" ")[0];
+  const needKey = isAdmin() && !S.aiKey && (FIREBASE ? !S.helperAt : !lsGet(AI_KEY, "")); // le manager active HELPER ici même
+  const act = needKey ? `<div class="hp-m a hp-act"><p><b>Activer HELPER (gratuit)</b></p><ol><li>Cliquez « Créer une clé gratuite » et connectez-vous avec votre compte Google (Gmail).</li><li>Cliquez « Create API key » (Créer une clé API), puis copiez la clé : elle commence par AIza.</li><li>Collez-la ci-dessous puis « Activer ».</li></ol>
+      <a class="btn" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Créer une clé gratuite (Google)</a>
+      <div class="hp-key"><input id="hp-key2" type="password" placeholder="Collez la clé AIza…" aria-label="Clé de l'IA" autocomplete="off" spellcheck="false"><button class="btn pri" type="button" data-act="hpkeysave2">Activer</button></div></div>` : "";
   p.hidden = false;
   p.innerHTML = `<div class="hp-h"><span class="logo">${ico("helper")}</span><div style="flex:1;min-width:0"><b>HELPER</b><div class="sub">Assistant technique · IA</div></div><button class="btn" type="button" data-act="hpnew" title="Effacer la conversation">Nouvelle</button><button class="btn" type="button" data-act="hpclose">Fermer</button></div>
     ${m ? `<div class="hp-ctx">À propos de <b>${esc(m.num)}</b> · ${esc(m.type)}${HP.ctx.code ? ` · préventif ${esc(TYPES[HP.ctx.code].toLowerCase())} S${HP.ctx.w}` : ""} <button type="button" class="lk" data-act="hpctx" title="Ne plus parler de cette machine" aria-label="Retirer la machine">✕</button></div>` : ""}
     <div class="hp-msgs" id="hp-msgs"><div class="hp-m a"><p>Bonjour${first ? " " + esc(first) : ""}, je suis <b>HELPER</b>, l'assistant technique de la maintenance.</p><p>Posez votre question : une machine, un réglage, une panne, un préventif…</p></div>
-      ${HP.msgs.map(x => `<div class="hp-m ${x.role === "user" ? "u" : "a"}${x.err ? " err" : ""}">${x.role === "user" ? esc(x.content).replace(/\n/g, "<br>") : hpFmt(x.content)}</div>`).join("")}
+      ${act}${HP.msgs.map(x => `<div class="hp-m ${x.role === "user" ? "u" : "a"}${x.err ? " err" : ""}">${x.role === "user" ? esc(x.content).replace(/\n/g, "<br>") : hpFmt(x.content)}</div>`).join("")}
       ${HP.busy ? `<div class="hp-m a" id="hp-live"><span class="z">HELPER réfléchit…</span></div>` : ""}</div>
     <form class="hp-f" id="hp-form"><textarea id="hp-in" rows="1" placeholder="Votre question…" aria-label="Votre question" ${HP.busy ? "disabled" : ""}></textarea><button class="btn pri" type="submit" ${HP.busy ? "disabled" : ""}>Envoyer</button></form>
     <div class="hp-note">HELPER est une IA : vérifiez les réglages importants avec le standard ou votre TL.</div>`;
@@ -2461,7 +2470,8 @@ async function helperSend(text){
   if(HP.open){ renderHelper(); const i = $("#hp-in"); if(i) i.focus(); }
 }
 document.addEventListener("submit", ev => { if(ev.target && ev.target.id === "hp-form"){ ev.preventDefault(); helperSend($("#hp-in").value); } });
-document.addEventListener("keydown", ev => { if(ev.target && ev.target.id === "hp-in" && ev.key === "Enter" && !ev.shiftKey){ ev.preventDefault(); helperSend(ev.target.value); } });
+document.addEventListener("keydown", ev => { if(ev.target && ev.target.id === "hp-in" && ev.key === "Enter" && !ev.shiftKey){ ev.preventDefault(); helperSend(ev.target.value); }
+  if(ev.target && ev.target.id === "hp-key2" && ev.key === "Enter"){ ev.preventDefault(); $('[data-act="hpkeysave2"]').click(); } });
 function helperPanel(){ // Réglages › HELPER (manager / admin)
   if(!FIREBASE || !isAdmin()) return "";
   const use = S.helperUse || {}, month = todayISO().slice(0, 7), rows = [];
@@ -3754,6 +3764,15 @@ document.addEventListener("click", async ev => {
     case "hpnew": if(!HP.busy){ HP.msgs = []; HP.ctx = null; hpSave(); renderHelper(); } break;
     case "hpctx": HP.ctx = null; renderHelper(); break;
     case "hpitem": { const it = S.D.idx.get(el.dataset.k); closeDlg(); if(it) openHelper({mid: it.m.id, code: it.code, w: it.w}); break; }
+    case "hpkeysave2": { // activation depuis la fenêtre HELPER
+      const v = ($("#hp-key2").value || "").trim();
+      if(!aiKeyOk(v)){ toast("Clé non reconnue : collez la clé Google (elle commence par AIza).", "late"); break; }
+      if(FIREBASE ? await setHelperKey(v) : (lsSet(AI_KEY, v), true)){
+        HP.msgs = HP.msgs.filter(x => !x.err); hpSave(); toast("HELPER est activé pour toute l'équipe.");
+        renderHelper(); const i = $("#hp-in"); if(i) i.focus();
+      }
+      break;
+    }
     case "hpkeysave": { const v = ($("#hp-key").value || "").trim(); if(!aiKeyOk(v)){ toast("Clé non reconnue : collez la clé Google (AIza…) ou Anthropic (sk-ant-…).", "late"); break; } if(await setHelperKey(v)){ toast("Clé enregistrée : HELPER est activé pour l'équipe."); $("#hp-key").value = ""; } break; }
     case "hpkeydel": if(await setHelperKey("")) toast("Clé retirée : HELPER est arrêté."); break;
     case "revoke": setChef(el.dataset.uid, false); break;
