@@ -3665,6 +3665,7 @@ function apRows(ids, from, to, full){ // lignes du fichier Import_CMU.csv : pré
 }
 function openApipro(){
   const secs = apSecs(); if(!secs.length) return;
+  derive(); // état de chaque machine à jour (hors parc exclues)
   const cfg = apCfg(), ids = secs.map(x => x.id), ms = machines.filter(m => ids.includes(m.svc) && !isOut(m));
   const techs = uniq([...ms.map(m => m.tech), ...ms.map(m => m.chef), ...ids.flatMap(id => extraTechs(id).map(x => x.name))]);
   const nWo = Object.values(cfg.wo).reduce((a, o) => a + Object.keys(o || {}).length, 0);
