@@ -124,6 +124,31 @@
    « Excel » : le fichier de l'archive. Le TL voit les archives de ses
    sections ; seul l'admin peut supprimer une archive.
 
+   API PRO (GMAO officielle) : Planning > bouton « API PRO » (admin et TL).
+   API PRO est sur un serveur interne : l'échange se fait par fichier, avec
+   son module Import / Export, sur le même PC.
+   1. Importer depuis API PRO (une des 3 façons) :
+      - dossier d'échange : « Relier le dossier » une fois (ex. Z:\, le
+        dossier de l'import WMABE), puis « Lire le dernier export API PRO » ;
+      - copier-coller : dans une liste d'API PRO, sélectionner les lignes
+        avec les titres, Ctrl+C, puis Ctrl+V dans la case, « Lire » ;
+      - fichier : un export Excel ou CSV d'API PRO.
+      L'application relie chaque ligne à sa machine (n° de série ou n° de
+      machine) et garde : code machine API PRO (MO), code technicien (work
+      supplier), n° d'OT par semaine. Vérifiez les colonnes, « Enregistrer ».
+   2. Codes API PRO : corriger ou compléter à la main, heures par préventif
+      (M, T, S, A…), type de travail (PM).
+   3. Exporter vers API PRO : les préventifs faits de la période →
+      « Écrire Import_CMU.csv dans le dossier relié » (ou « Télécharger »).
+      Format de l'import WMABE : « ; », UTF-8, dates jj/mm/aaaa, 14 colonnes
+      (1 OT, 2 date, 3 code machine, 4 nom, 9 code technicien, 10 heures,
+      13 type, 14 remarque), sans ligne de titres. Puis, dans API PRO :
+      Import Manager > « Import of Transaction (work supplier) WMABE ».
+      Cet import refuse un OT inconnu : laissez cochée « Seulement les
+      lignes avec n° d'OT et code machine ».
+   Le dossier relié marche avec Chrome ou Edge (l'autorisation est demandée
+   au premier clic).
+
    Imprimer la fiche de la semaine d'un technicien (papier A4) :
    1. Planning : choisissez la section puis le technicien dans « Responsable ».
    2. Cliquez « Imprimer la semaine (A4) » (aussi dans Alertes > Cette semaine).

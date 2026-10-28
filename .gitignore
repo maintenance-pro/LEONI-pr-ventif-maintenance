@@ -11,3 +11,12 @@ site/source/preventif-2026.html
 site/source/preventif-2026-standalone.html
 
 __pycache__/
+
+# Programmes et archives internes (ex. client API PRO) : jamais sur GitHub (dépôt public)
+*.zip
+*.rar
+*.7z
+
+# Fichiers d'échange avec API PRO et propositions de planning
+Import_CMU.csv
+Planning préventif 20*proposition*.xlsx

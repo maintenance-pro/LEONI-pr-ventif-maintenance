@@ -76,7 +76,8 @@ rules = {"rules": {
     "suivi": {".read": A + member, "$mid": {".write": A + member}},
     "config": {".read": A + member, ".write": A + admin,
                "org": {".write": A + editor},  # organisation : les TL modifient aussi leurs sections (l'écran limite aux leurs)
-               "std": {".write": A + editor}},  # standards préventifs : aussi le TL (ses sections)
+               "std": {".write": A + editor},  # standards préventifs : aussi le TL (ses sections)
+               "apipro": {".write": A + editor}},  # codes API PRO (machines, techniciens, OT)
     # archives des plannings : créées par un admin ou un TL (jamais modifiées), supprimées par un admin
     "archives": {".read": A + editor, "$id": {".write": f"auth != null && ((!data.exists() && newData.exists() && {editor}) || (!newData.exists() && {admin}))"}},
     "archIdx": {".read": A + editor, "$id": {".write": f"auth != null && ((!data.exists() && newData.exists() && {editor}) || (!newData.exists() && {admin}))",
