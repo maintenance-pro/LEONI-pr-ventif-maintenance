@@ -74,6 +74,11 @@
    - Technicien M     : préventifs Mensuels (et hebdomadaires, démarrage)
    - Sans technicien A·S·T (Cellule, Surmoulage), le technicien M fait tout.
 
+   TL de plusieurs sections : dans l'organigramme (Affectations), l'encadré
+   des TL a son bouton « Modifier » : corriger un nom, changer le shift,
+   ajouter ou retirer un TL s'applique à toutes les sections de l'encadré.
+   Pour une seule section : bouton « Modifier » de la section.
+
    Matricules : bouton « Matricules » (Équipes) ou « Matricules des
    techniciens » (Affectations), ou colonne « Matricule » dans le bouton
    « Modifier » de chaque section. Tapez le matricule puis « Enregistrer ».
@@ -126,11 +131,11 @@
    - Même clé que HELPER (Réglages > HELPER).
    - Le document est envoyé à Google (ou Anthropic) pour être lu.
 
-   Envoyer les retards (Alertes > « Envoyer les retards (WhatsApp / e-mail) ») :
-   - le message contient SEULEMENT les machines en retard ;
-   - 0 retard : pas de bouton, rien à envoyer ;
-   - rapport général, ou les retards de CHAQUE technicien (seuls ceux qui ont
-     des retards sont dans la liste), en un clic ;
+   Envoyer (Alertes > « Envoyer retards + semaine (WhatsApp / e-mail) ») :
+   - le message contient 2 parties : EN RETARD et À FAIRE CETTE SEMAINE ;
+     une partie à 0 n'est pas écrite ; tout à 0 : pas de bouton, rien envoyé ;
+   - rapport général, ou le message de CHAQUE technicien (ses machines à
+     lui : ses retards et sa semaine), en un clic ;
    - WhatsApp ou la messagerie s'ouvre avec le message déjà écrit ;
    - numéros WhatsApp et e-mails : Affectations > Matricules et contacts.
 

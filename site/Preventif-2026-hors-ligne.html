@@ -576,6 +576,9 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .org-grp > .org-sectl .tls{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 18px;margin-top:2px}
 .org-grp > .org-sectl .pp{margin-top:0}
 .org-grp > .org-sectl .grp-n{font-size:12px;color:var(--ink-3);margin-top:3px}
+.org-sectl .tl-edit{appearance:none;border:1px solid var(--accent);background:var(--surface);color:var(--ink);border-radius:6px;padding:3px 12px;font-size:12.5px;font-weight:600;cursor:pointer;margin-top:7px}
+.org-sectl .tl-edit:hover{background:var(--accent);color:var(--accent-ink)}
+.org-sectl.warn .tl-edit{border-color:var(--late)}
 .org-grp > .org-stem{align-self:center}
 .org-grp > .org-cols{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
 .org-tln{font-weight:600;font-size:14px;overflow-wrap:anywhere}
@@ -1703,7 +1706,7 @@ function renderAlertes(D){
 
   const wkShown = S.hideDone ? wk.filter(it => it.st !== "fait") : wk;
   const hideBtn = `<button class="btn" data-act="print">Imprimer (A4)</button><button class="btn" data-act="hidedone">${S.hideDone ? "Afficher les faits" : "Masquer les faits"}</button>`;
-  const repBtn = `${late.length ? `<button class="btn pri" data-act="report">Envoyer les retards (WhatsApp / e-mail)</button>` : ""}${notifSupported() && !notifOn() && Notification.permission !== "denied" ? `<button class="btn" data-act="notifon">Activer les notifications</button>` : ""}`;
+  const repBtn = `${late.length || wk.some(it => it.st === "semaine") ? `<button class="btn pri" data-act="report">Envoyer retards + semaine (WhatsApp / e-mail)</button>` : ""}${notifSupported() && !notifOn() && Notification.permission !== "denied" ? `<button class="btn" data-act="notifon">Activer les notifications</button>` : ""}`;
   $("#v-alertes").innerHTML = alarm + kpis + svcTable +
     listPanel("p-late", "En retard", `Planifiés avant S${CW}, non faits`, late, {empty:"Aucun préventif en retard.", tools:repBtn}) +
     listPanel("p-week", `Cette semaine · S${CW}`, esc(CW<=NWEEKS?weekRange(CW):""), wkShown, {empty: wk.length ? "Tous les préventifs de la semaine sont faits." : "Aucun préventif planifié cette semaine.", tools:hideBtn}) +
@@ -1953,12 +1956,50 @@ function tlGroups(svcs){ // sections qui ont exactement les mêmes TL : un seul 
   }
   return [...groups.values()];
 }
-function tlGroupBox(g){
+function tlGroupBox(g, own){
   const names = g.secs.map(sv => sv.name);
   return `<div class="org-sectl ${g.tls.length ? "" : "warn"}"><div class="eyebrow">${g.tls.length > 1 ? "Responsables de section (TL)" : "Responsable de section (TL)"}</div>
     ${g.tls.length ? `<div class="tls">${g.tls.map(t => `<div class="pp"><span class="pn">${esc(t.name)}</span>${t.shifts.map(x => `<span class="shf">${esc(x)}</span>`).join("")}</div>`).join("")}</div>` : `<b>TL non renseigné</b>`}
     ${names.length > 1 ? `<div class="grp-n">${names.length} sections : ${esc(names.join(" · "))}</div>` : ""}
+    ${own ? `<button class="tl-edit" type="button" data-act="tledit" data-svcs="${esc(g.secs.map(sv => sv.id).join(","))}">${g.tls.length ? "Modifier" : "Indiquer le TL"}</button>` : ""}
   </div>`;
+}
+function openTlGroup(ids){ // TL communs à plusieurs sections : une seule saisie pour toutes
+  ids = ids.filter(id => SVC[id]);
+  if(!canOrg() || !ids.length) return;
+  const g = tlGroups(ids.map(id => SVC[id]))[0], names = ids.map(id => SVC[id].name);
+  const people = uniq([...SECTIONS.flatMap(v => v.tls.map(t => t.name)), ...machines.map(m => m.chef), ...machines.map(m => m.tech)]);
+  S.seRows = {tl: t => `<div class="erow e-tl" data-id="${t.name ? "g" : ""}" data-orig="${esc(t.name || "")}" data-oshift="${esc(t.shift || "")}"><input class="e-name" type="text" value="${esc(t.name || "")}" placeholder="Nom du TL" list="se-people" aria-label="Nom du TL"><input class="e-shift" type="text" value="${esc(t.shift || "")}" placeholder="${t.multi ? "Plusieurs shifts : vide = inchangés" : "Shift (facultatif)"}" list="shift-dl" aria-label="Shift"><button type="button" class="ex" data-act="se-del" aria-label="Retirer">×</button></div>`};
+  const rows = g.tls.map(t => ({name: t.name, shift: t.shifts.length === 1 ? t.shifts[0] : "", multi: t.shifts.length > 1}));
+  dlg.className = "";
+  dlg.innerHTML = `<form class="dlg" id="tg-form" method="dialog">
+    <div class="dlg-h"><div><h3 id="dlg-title">Modifier les TL</h3><div class="sub">${ids.length > 1 ? `Pour les ${ids.length} sections : ${esc(names.join(" · "))}` : esc(names[0])}</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b">
+      <fieldset class="rep"><legend>TL · responsables de section</legend><div class="erows" id="se-tl">${rows.map(S.seRows.tl).join("")}</div><div><button type="button" class="addp" data-act="se-add" data-k="tl">+ Ajouter un TL</button></div>
+        <p class="z" style="margin:0;font-size:12.5px">Corrigez un nom, changez le shift, retirez (×) ou ajoutez un TL : c'est appliqué ${ids.length > 1 ? `aux ${ids.length} sections en même temps` : "à cette section"}. Pour donner d'autres TL à une seule section : bouton « Modifier » de la section.</p></fieldset>
+      <datalist id="se-people">${people.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
+      <datalist id="shift-dl">${SHIFT_SUGG.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
+    </div>
+    <div class="dlg-f"><span class="z" id="tg-msg"></span><span class="sp"></span><button type="button" class="btn" data-act="close">Annuler</button><button type="submit" class="btn pri">Enregistrer</button></div>
+  </form>`;
+  if(!dlg.open) dlg.showModal();
+  $("#tg-form").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const cl = v => String(v || "").trim().replace(/\s+/g, " ");
+    const rs = [...document.querySelectorAll("#se-tl .erow")].filter(r => !r.hidden).map(r => ({orig: r.dataset.orig || "", name: cl(r.querySelector(".e-name").value), shift: cl(r.querySelector(".e-shift").value), oshift: r.dataset.oshift || ""})).filter(x => x.name);
+    const twice = rs.find((x, i) => rs.findIndex(y => sameName(y.name, x.name)) !== i);
+    if(twice){ $("#tg-msg").className = "lateN"; $("#tg-msg").textContent = `« ${twice.name} » est en double.`; return; }
+    const list = id => rs.map(x => { const m = x.orig ? SVC[id].tls.find(t => sameName(t.name, x.orig)) : null; // garde l'id du TL : les techniciens restent rattachés
+      return {id: m ? m.id : newId("t"), name: x.name, shift: m && x.shift === x.oshift ? (m.shift || "") : x.shift}; });
+    const sig = tls => tls.map(t => t.name + "|" + (t.shift || "")).join(",");
+    if(ids.every(id => sig(list(id)) === sig(SVC[id].tls))){ closeDlg(); toast("Aucun changement."); return; }
+    const after = rs.map(x => x.name + (x.shift ? " (" + x.shift + ")" : "")).join(", ") || "aucun";
+    const ok = await writeOrg(o => { o.secTls = Object.assign({}, o.secTls); for(const id of ids) o.secTls[id] = list(id); }, `TL · ${names.join(" · ")} : ${after}`);
+    if(!ok) return;
+    closeDlg(); toast(`TL enregistrés pour ${ids.length > 1 ? ids.length + " sections" : names[0]}.`);
+    for(const x of rs.filter(x => x.orig && !sameName(x.orig, x.name))) // nom corrigé : les comptes TL reliés suivent
+      for(const uid of Object.keys(S.users)) if(roleOf(uid) === "tl" && sameName(tlLinkOf(uid), x.orig)) await setTlLink(uid, x.name);
+  });
 }
 function renderAffect(D){
   const own = canOrg(), canM = canPlan(), f = S.filters;
@@ -1978,7 +2019,7 @@ function renderAffect(D){
     <div class="org-mgr"><div class="eyebrow">Manager maintenance</div><b>${esc(mgrName())}</b>${own ? `<button class="lk" data-act="orgform" data-k="manager">${S.org && S.org.manager ? "Modifier le nom" : "Indiquer votre nom"}</button>` : ""}</div>
     <div class="org-stem"></div><div class="org-groups">`;
   for(const g of tlGroups(svcs)){
-  chart += `<div class="org-grp" style="--n:${g.secs.length}">${tlGroupBox(g)}<div class="org-stem"></div><div class="org-cols">`;
+  chart += `<div class="org-grp" style="--n:${g.secs.length}">${tlGroupBox(g, own)}<div class="org-stem"></div><div class="org-cols">`;
   for(const sv of g.secs){
     const sm = machines.filter(m => m.svc === sv.id && !isOut(m)), two = sm.some(m => m.chef);
     const count = key => { const c = new Map(); for(const m of sm){ const k = m[key]; if(k) c.set(k, (c.get(k) || 0) + 1); } return [...c.entries()].sort((a,b) => a[0].localeCompare(b[0], "fr")); };
@@ -3016,48 +3057,49 @@ function openMachine(mid){
     if(ok){ closeDlg(); toast(`${m.num} : ${ETATS[k2]}${k2!=="actif"?" depuis S"+since:""}`); }
   });
 }
-function buildReport(){ // machines en retard seulement ; chaîne vide s'il n'y a aucun retard
+function buildReport(){ // en retard + à faire cette semaine ; une partie vide n'est pas écrite ; chaîne vide s'il n'y a rien
   const D = S.D, its = D.items.filter(it => matchIt(it));
-  const late = its.filter(it => it.st === "retard");
-  if(!late.length) return "";
+  const late = its.filter(it => it.st === "retard"), wk = its.filter(it => it.st === "semaine");
+  if(!late.length && !wk.length) return "";
   const f = [S.filters.svc ? SVC[S.filters.svc].name : "Tous les services", S.filters.who || "Tous les responsables"].join(" · ");
-  const L = [];
-  L.push(`PRÉVENTIFS EN RETARD — S${CW} (${CW<=NWEEKS?weekRange(CW):""} ${YEAR})`);
-  L.push((S.org && S.org.manager ? "Manager maintenance : " + S.org.manager + " · " : "") + f);
-  L.push(`${late.length} préventif${late.length > 1 ? "s" : ""} en retard sur ${new Set(late.map(it => it.m.id)).size} machine${new Set(late.map(it => it.m.id)).size > 1 ? "s" : ""}`);
+  const pl = (n, w) => `${n} ${w}${n > 1 ? "s" : ""}`, nm = a => new Set(a.map(it => it.m.id)).size;
   const si = {}; SECTIONS.forEach((x, i) => { si[x.id] = i; });
-  const all = late.slice().sort((a,b) => (si[a.m.svc] ?? 99) - (si[b.m.svc] ?? 99) || itemTech(a).localeCompare(itemTech(b), "fr") || a.ew - b.ew || a.m.num.localeCompare(b.m.num,"fr",{numeric:true}));
-  const line = it => `     - ${it.m.num} (${it.m.type}) — ${TYPES[it.code]} — prévu S${it.ew}${it.m.proj ? " — "+it.m.proj : ""}`;
-  let g0 = null, t0 = null;
-  for(const it of all){
-    const g = it.m.svc, t = g + "|" + itemTech(it);
-    if(g !== g0){ g0 = g; t0 = null; L.push("", `══ ${SVC[g].name.toUpperCase()}${SVC[g].tl ? " (TL : " + SVC[g].tl + ")" : ""}`); }
-    if(t !== t0){
-      t0 = t;
-      const mine = x => x.m.svc + "|" + itemTech(x) === t;
-      const a = late.filter(mine), r = techRole(g, itemTech(it));
-      L.push(`  ■ ${(itemTech(it) || "Sans technicien").toUpperCase()}${r ? " (" + r + ")" : ""}`);
-      a.sort((x,y) => x.ew - y.ew).forEach(x => L.push(line(x)));
+  const L = [];
+  L.push(`PRÉVENTIFS — S${CW} (${CW<=NWEEKS?weekRange(CW):""} ${YEAR})`);
+  L.push((S.org && S.org.manager ? "Manager maintenance : " + S.org.manager + " · " : "") + f);
+  const part = (title, arr, line) => {
+    if(!arr.length) return;
+    L.push("", `▶ ${title} : ${pl(arr.length, "préventif")} sur ${pl(nm(arr), "machine")}`);
+    const all = arr.slice().sort((a,b) => (si[a.m.svc] ?? 99) - (si[b.m.svc] ?? 99) || itemTech(a).localeCompare(itemTech(b), "fr") || a.ew - b.ew || a.m.num.localeCompare(b.m.num,"fr",{numeric:true}));
+    let g0 = null, t0 = null;
+    for(const it of all){
+      const g = it.m.svc, t = g + "|" + itemTech(it);
+      if(g !== g0){ g0 = g; t0 = null; L.push(`══ ${SVC[g].name.toUpperCase()}${SVC[g].tl ? " (TL : " + SVC[g].tl + ")" : ""}`); }
+      if(t !== t0){ t0 = t; const r = techRole(g, itemTech(it)); L.push(`  ■ ${(itemTech(it) || "Sans technicien").toUpperCase()}${r ? " (" + r + ")" : ""}`); }
+      L.push(line(it));
     }
-  }
+  };
+  const proj = it => it.m.proj ? " — " + it.m.proj : "";
+  part("EN RETARD", late, it => `     - ${it.m.num} (${it.m.type}) — ${TYPES[it.code]} — prévu S${it.ew}${proj(it)}`);
+  part(`À FAIRE CETTE SEMAINE (S${CW})`, wk, it => `     - ${it.m.num} (${it.m.type}) — ${TYPES[it.code]}${proj(it)}`);
   return L.join("\n");
 }
 
 const appLine = () => `\n\nApplication : ${APP_URL}${FIREBASE ? "\n(Techniciens : onglet « Technicien », entrez votre matricule)" : ""}`;
-function reportFor(who){ // who : un technicien (ses retards à lui) ou "" (selon les filtres) ; "" s'il n'y a aucun retard
+function reportFor(who){ // who : un technicien (ses machines à lui) ou "" (selon les filtres) ; "" s'il n'y a rien à envoyer
   if(!who){ const r = buildReport(); return r ? r + appLine() : ""; }
   const w = S.filters.who; S.filters.who = who;
   try{ const r = buildReport(); return r ? `Bonjour ${who},\n\n` + r + appLine() : ""; } finally{ S.filters.who = w; }
 }
 function sendWa(who){
   const txt = reportFor(who);
-  if(!txt){ toast("Aucun préventif en retard : rien à envoyer."); return; }
+  if(!txt){ toast("Aucun préventif en retard ni à faire cette semaine : rien à envoyer."); return; }
   const tel = who ? telNorm(contactOf(who).tel) : "";
   window.open(`https://wa.me/${tel}?text=${encodeURIComponent(txt)}`, "_blank", "noopener");
 }
 async function sendMail(who){
-  const txt = reportFor(who), mail = who ? (contactOf(who).mail || "") : "", subj = `Préventifs en retard · S${CW}${who ? " · " + who : ""}`;
-  if(!txt){ toast("Aucun préventif en retard : rien à envoyer."); return; }
+  const txt = reportFor(who), mail = who ? (contactOf(who).mail || "") : "", subj = `Préventifs · S${CW}${who ? " · " + who : ""}`;
+  if(!txt){ toast("Aucun préventif en retard ni à faire cette semaine : rien à envoyer."); return; }
   let body = txt;
   if(encodeURIComponent(txt).length > 1800){ // trop long pour un lien e-mail : on le copie
     try{ await navigator.clipboard.writeText(txt); }catch(e){}
@@ -3067,20 +3109,20 @@ async function sendMail(who){
 }
 function openReport(){
   const txt = reportFor("");
-  const its = S.D.items.filter(it => matchIt(it) && it.st === "retard");
+  const its = S.D.items.filter(it => matchIt(it) && (it.st === "retard" || it.st === "semaine"));
   const si = {}; SECTIONS.forEach((x, i) => { si[x.id] = i; });
   const by = new Map();
   for(const it of its){ const n = itemTech(it); if(!n) continue; const e = by.get(n) || {n, svc: it.m.svc, late: 0, wk: 0}; if(it.st === "retard") e.late++; else e.wk++; by.set(n, e); }
-  const rows = [...by.values()].filter(e => e.late).sort((a, b) => (si[a.svc] ?? 99) - (si[b.svc] ?? 99) || a.n.localeCompare(b.n, "fr"));
+  const rows = [...by.values()].sort((a, b) => (si[a.svc] ?? 99) - (si[b.svc] ?? 99) || a.n.localeCompare(b.n, "fr"));
   const ctc = n => { const c = contactOf(n); return `${c.tel ? `<span class="z mono">${esc(c.tel)}</span>` : ""}${c.mail ? `<span class="z"> ${esc(c.mail)}</span>` : ""}${!c.tel && !c.mail ? `<span class="z">pas de contact</span>` : ""}`; };
   dlg.className = "wide";
   dlg.innerHTML = `<div class="dlg">
-    <div class="dlg-h"><div><h3 id="dlg-title">Envoyer les alertes</h3><div class="sub">Seulement les machines en retard, selon les filtres actuels. WhatsApp et e-mail s'ouvrent avec le message déjà écrit : il reste à cliquer « Envoyer ».</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-h"><div><h3 id="dlg-title">Envoyer les alertes</h3><div class="sub">Les machines en retard et celles à faire cette semaine, selon les filtres actuels. WhatsApp et e-mail s'ouvrent avec le message déjà écrit : il reste à cliquer « Envoyer ».</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
     <div class="dlg-b">
-      ${txt ? `<fieldset class="rep"><legend>Tous les retards</legend><textarea class="report" id="rep-txt" readonly>${esc(txt)}</textarea>
-        <div class="row-btns"><button type="button" class="btn ok" data-act="sendwa" data-who="">WhatsApp</button><button type="button" class="btn" data-act="sendmail" data-who="">E-mail</button><button type="button" class="btn" data-act="copy">Copier</button></div></fieldset>` : `<p class="z">Aucun préventif en retard : rien à envoyer.</p>`}
-      ${rows.length ? `<fieldset class="rep"><legend>À chaque technicien en retard · ses machines à lui</legend>
-        <div class="scroll"><table class="t"><thead><tr><th>Technicien</th><th class="r">En retard</th><th>Contact</th><th></th></tr></thead><tbody>${rows.map(e => `<tr><td><b>${esc(e.n)}</b>${matTag(e.n)}<div class="z">${esc(SVC[e.svc] ? SVC[e.svc].name : "")}${techRole(e.svc, e.n) ? " · " + esc(techRole(e.svc, e.n)) : ""}</div></td><td class="r num lateN">${e.late}</td><td>${ctc(e.n)}</td><td class="r"><button type="button" class="btn ok" data-act="sendwa" data-who="${esc(e.n)}">WhatsApp</button> <button type="button" class="btn" data-act="sendmail" data-who="${esc(e.n)}">E-mail</button></td></tr>`).join("")}</tbody></table></div>
+      ${txt ? `<fieldset class="rep"><legend>Message général</legend><textarea class="report" id="rep-txt" readonly>${esc(txt)}</textarea>
+        <div class="row-btns"><button type="button" class="btn ok" data-act="sendwa" data-who="">WhatsApp</button><button type="button" class="btn" data-act="sendmail" data-who="">E-mail</button><button type="button" class="btn" data-act="copy">Copier</button></div></fieldset>` : `<p class="z">Aucun préventif en retard ni à faire cette semaine : rien à envoyer.</p>`}
+      ${rows.length ? `<fieldset class="rep"><legend>À chaque technicien · ses machines à lui</legend>
+        <div class="scroll"><table class="t"><thead><tr><th>Technicien</th><th class="r">En retard</th><th class="r">Cette semaine</th><th>Contact</th><th></th></tr></thead><tbody>${rows.map(e => `<tr><td><b>${esc(e.n)}</b>${matTag(e.n)}<div class="z">${esc(SVC[e.svc] ? SVC[e.svc].name : "")}${techRole(e.svc, e.n) ? " · " + esc(techRole(e.svc, e.n)) : ""}</div></td><td class="r num${e.late ? " lateN" : ""}">${e.late}</td><td class="r num">${e.wk}</td><td>${ctc(e.n)}</td><td class="r"><button type="button" class="btn ok" data-act="sendwa" data-who="${esc(e.n)}">WhatsApp</button> <button type="button" class="btn" data-act="sendmail" data-who="${esc(e.n)}">E-mail</button></td></tr>`).join("")}</tbody></table></div>
         <p class="z" style="margin:0;font-size:12.5px">Numéros WhatsApp et e-mails : Affectations › Matricules et contacts. Sans numéro, WhatsApp vous laisse choisir le contact ou le groupe.</p></fieldset>` : ""}
     </div>
   </div>`;
@@ -3716,6 +3758,7 @@ document.addEventListener("click", async ev => {
     case "orgreset": openOrgReset(el.dataset.svc || ""); break;
     case "secform": openSectionForm(el.dataset.svc || null); break;
     case "secedit": openSectionEditor(el.dataset.svc); break;
+    case "tledit": openTlGroup((el.dataset.svcs || "").split(",")); break;
     case "se-add": { const k = el.dataset.k, box = $("#se-" + k); if(box && S.seRows){ box.insertAdjacentHTML("beforeend", S.seRows[k]({})); const inp = box.lastElementChild.querySelector("input"); if(inp) inp.focus(); } break; }
     case "se-del": { const row = el.closest(".erow"); if(!row) break; if(row.dataset.id || row.dataset.old) row.hidden = true; else row.remove(); break; }
     case "se-plan": { const svc = el.dataset.svc; closeDlg(); S.filters = {svc, who:"", q:""}; saveUI(); S.editing = canPlan(); S.undo = []; go("planning"); break; }
