@@ -579,6 +579,8 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .org-sectl .tl-edit{appearance:none;border:1px solid var(--accent);background:var(--surface);color:var(--ink);border-radius:6px;padding:3px 12px;font-size:12.5px;font-weight:600;cursor:pointer;margin-top:7px}
 .org-sectl .tl-edit:hover{background:var(--accent);color:var(--accent-ink)}
 .org-sectl.warn .tl-edit{border-color:var(--late)}
+.acct-acts{white-space:nowrap}
+.acct-acts .btn{margin-left:4px}
 .org-grp > .org-stem{align-self:center}
 .org-grp > .org-cols{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
 .org-tln{font-weight:600;font-size:14px;overflow-wrap:anywhere}
@@ -1126,6 +1128,7 @@ async function fbSession(u){
   }
   const meRef = rdb.ref("users/" + uid), me = (await meRef.once("value")).val() || {}, pend = S.pendingProfile;
   S.pendingProfile = null;
+  if(me.del && owner !== uid){ S.gateNext = {kind: "login", msg: "Ce compte a été supprimé par le manager maintenance."}; await S.fb.auth.signOut(); return; }
   const mat = (u.email || "").endsWith("@" + MAT_DOMAIN) ? identOf(u.email) : "";
   if(mat && owner !== uid && !me.demande && me.ok !== true && !pend){ // technicien entré avec son matricule seul (pas un compte Admin / TL)
     const created = S.matCreated; S.matCreated = false;
@@ -1195,13 +1198,60 @@ async function setRole(uid, r){ // r : tech | tl | admin | off
   try{ await S.fb.rdb.ref("users/" + uid).update(up); toast(r === "off" ? `Accès retiré : ${n}.` : `${n} : ${ROLES[r]}.`); }
   catch(e){ toast("Non enregistré (" + fbCode(e) + ").", "late"); scheduleRender(); }
 }
+async function renameAccount(uid, nom){
+  const p = S.users[uid] || {}, self = uid === S.uid;
+  if(!FIREBASE || !uid || (!self && (!isAdmin() || uid === S.config.owner))) return false;
+  const up = {nom};
+  if(!self && roleOf(uid) === "tl" && !p.tlName){ const cur = tlLinkOf(uid); if(cur) up.tlName = cur; } // relié par son ancien nom : il garde ses sections
+  try{ await S.fb.rdb.ref("users/" + uid).update(up); if(self){ S.meName = nom; scheduleRender(); } toast(`Nom changé : ${nom}.`); return true; }
+  catch(e){ toast("Nom non enregistré (" + fbCode(e) + ").", "late"); return false; }
+}
+const acctKeep = uid => !!(S.mods[uid] && Object.keys(S.mods[uid]).length); // a déjà modifié le planning
+async function deleteAccount(uid){
+  if(!FIREBASE || !isAdmin() || !uid || uid === S.uid || uid === S.config.owner) return false;
+  const p = S.users[uid] || {}, ref = S.fb.rdb.ref("users/" + uid);
+  try{
+    if(acctKeep(uid)) await ref.update({ok: false, del: true, fin: p.fin || new Date().toISOString()}); // ses modifications du planning restent valables
+    else await ref.remove();
+    toast(`Compte supprimé : ${p.nom || "compte"}.`); return true;
+  }catch(e){ toast("Compte non supprimé (" + fbCode(e) + ").", "late"); return false; }
+}
+function openAcctName(uid){
+  const p = S.users[uid]; if(!p) return;
+  dlg.className = "";
+  dlg.innerHTML = `<form class="dlg" id="acn-form" method="dialog">
+    <div class="dlg-h"><div><h3 id="dlg-title">Modifier le nom</h3><div class="sub mono">${esc(p.ident || "")}</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b"><label class="field">Nom affiché<input id="acn-nom" type="text" maxlength="80" value="${esc(p.nom || "")}" required autocomplete="off"></label>
+      <p class="z" style="margin:0;font-size:12.5px">Le nom apparaît dans les comptes, le Journal et en haut de l'application. L'e-mail ou le matricule de connexion et le mot de passe ne changent pas.</p></div>
+    <div class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-act="close">Annuler</button><button type="submit" class="btn pri">Enregistrer</button></div>
+  </form>`;
+  if(!dlg.open) dlg.showModal();
+  const i = $("#acn-nom"); i.focus(); i.select();
+  $("#acn-form").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const v = i.value.trim().replace(/\s+/g, " ");
+    if(!v){ i.focus(); return; }
+    if(v === p.nom || await renameAccount(uid, v)) closeDlg();
+  });
+}
+function openAcctDel(uid){
+  const p = S.users[uid]; if(!p) return;
+  dlg.className = "";
+  dlg.innerHTML = `<div class="dlg">
+    <div class="dlg-h"><div><h3 id="dlg-title">Supprimer le compte</h3><div class="sub">${esc(p.nom || "")} · <span class="mono">${esc(p.ident || "")}</span></div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b"><p style="margin:0">Ce compte disparaît de la liste et ne peut plus entrer dans l'application.${acctKeep(uid) ? " Ses modifications du planning déjà faites restent." : " Si la personne se reconnecte, elle réapparaît comme une demande en attente, que vous pouvez refuser."}</p></div>
+    <div class="dlg-f"><span class="sp"></span><button type="button" class="btn" data-act="close">Annuler</button><button type="button" class="btn danger" data-act="acctdelok" data-uid="${esc(uid)}">Supprimer le compte</button></div>
+  </div>`;
+  if(!dlg.open) dlg.showModal();
+}
 function accountsPanel(){
   if(!FIREBASE || !isAdmin()) return "";
   const own = S.config.owner;
   const nTech = Object.values(S.users).filter(p => p && p.tech).length;
-  const rows = Object.entries(S.users).filter(([u, p]) => u !== own && p && !p.tech).map(([uid, p]) => ({uid, nom: p.nom || "Sans nom", ident: p.ident || "", at: p.at || "", dem: ROLES[p.demande] ? p.demande : "", role: roleOf(uid), st: p.ok === true ? "ok" : p.ok === false ? "off" : "wait"}));
+  const rows = Object.entries(S.users).filter(([u, p]) => u !== own && p && !p.tech && !p.del).map(([uid, p]) => ({uid, nom: p.nom || "Sans nom", ident: p.ident || "", at: p.at || "", dem: ROLES[p.demande] ? p.demande : "", role: roleOf(uid), st: p.ok === true ? "ok" : p.ok === false ? "off" : "wait"}));
   rows.sort((a, b) => (a.st !== "wait") - (b.st !== "wait") || a.nom.localeCompare(b.nom, "fr"));
-  const ownerRow = S.users[own] ? `<tr><td><b>${esc(S.users[own].nom || mgrName())}</b></td><td class="mono">${esc(S.users[own].ident || "")}</td><td class="z"></td><td><span class="pill done">Manager · Admin</span></td><td></td></tr>` : "";
+  const ownerRow = S.users[own] ? `<tr><td><b>${esc(S.users[own].nom || mgrName())}</b></td><td class="mono">${esc(S.users[own].ident || "")}</td><td class="z"></td><td><span class="pill done">Manager · Admin</span></td><td class="r">${S.uid === own ? `<button class="btn" data-act="acctname" data-uid="${esc(own)}">Modifier le nom</button>` : ""}</td></tr>` : "";
+  const acts = r => `<button class="btn" data-act="acctname" data-uid="${esc(r.uid)}">Modifier le nom</button>${r.uid !== S.uid ? ` <button class="btn danger" data-act="acctdel" data-uid="${esc(r.uid)}">Supprimer</button>` : ""}`;
   const cell = r => {
     if(r.uid === S.uid) return `<span class="pill done">${esc(ROLES[r.role] || "")} (vous)</span>`;
     const opts = (r.st === "wait" ? `<option value="" selected>En attente</option>` : "")
@@ -1216,7 +1266,7 @@ function accountsPanel(){
     <p><b>Techniciens</b> : pas de compte ni de mot de passe. Ils choisissent l'onglet « Technicien » et tapent leur matricule ; seuls les matricules enregistrés dans <b>Affectations › Matricules des techniciens</b> peuvent entrer, et chacun ne voit que ses machines.${nTech ? ` ${nTech} technicien${nTech > 1 ? "s" : ""} déjà entré${nTech > 1 ? "s" : ""} par matricule.` : ""}</p>
     <p><b>Admin et TL</b> : chacun crée son compte (e-mail ou matricule, et un mot de passe) et indique le rôle demandé. Il ne voit rien tant que vous ne l'avez pas autorisé.</p>
     <p><b>Admin</b> : tout, comme le manager (organisation, réglages, comptes, planning). <b>TL</b> : modifie le planning de son équipe seulement (les sections dont il est TL : reliez son compte à son nom de TL), voit Affectations et Journal. <b>Technicien</b> : consulte et marque ses préventifs faits ou reportés.</p>
-    <div class="scroll"><table class="t"><thead><tr><th>Nom</th><th>E-mail ou matricule</th><th>Demande</th><th>Rôle</th><th></th></tr></thead><tbody>${ownerRow}${rows.map(r => `<tr><td><b>${esc(r.nom)}</b><div class="z">${esc(r.at ? "créé le " + fmtStamp(r.at) : "")}</div></td><td class="mono">${esc(r.ident)}</td><td>${r.dem ? esc(ROLES[r.dem]) : `<span class="z">—</span>`}</td><td>${cell(r)}</td><td class="r">${quick(r)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="scroll"><table class="t"><thead><tr><th>Nom</th><th>E-mail ou matricule</th><th>Demande</th><th>Rôle</th><th></th></tr></thead><tbody>${ownerRow}${rows.map(r => `<tr><td><b>${esc(r.nom)}</b><div class="z">${esc(r.at ? "créé le " + fmtStamp(r.at) : "")}</div></td><td class="mono">${esc(r.ident)}</td><td>${r.dem ? esc(ROLES[r.dem]) : `<span class="z">—</span>`}</td><td>${cell(r)}</td><td class="r acct-acts">${quick(r)}${acts(r)}</td></tr>`).join("")}</tbody></table></div>
     ${rows.length ? "" : `<p class="z">Aucun autre compte pour l'instant. Donnez le lien de l'application à vos TL et techniciens : ${esc(APP_URL)}</p>`}</div>`;
 }
 /* Page de connexion (par-dessus l'application) */
@@ -3810,6 +3860,9 @@ document.addEventListener("click", async ev => {
     case "deltech": { const svc = el.dataset.svc, tech = el.dataset.tech; if(await writeOrg(o => { o.tl = (o.tl || []).filter(r => !(r.svc === svc && r.tech === tech)); }, `${SVC[svc].name} · technicien retiré : ${tech}`)) toast("Technicien retiré."); break; }
     case "approve": setChef(el.dataset.uid, true); break;
     case "acct": setRole(el.dataset.uid, el.dataset.v); break;
+    case "acctname": openAcctName(el.dataset.uid); break;
+    case "acctdel": openAcctDel(el.dataset.uid); break;
+    case "acctdelok": el.disabled = true; if(await deleteAccount(el.dataset.uid)) closeDlg(); else el.disabled = false; break;
     case "logout": if(S.fb) S.fb.auth.signOut(); break;
     case "install": installApp(); break;
     case "helper": openHelper(null); break;

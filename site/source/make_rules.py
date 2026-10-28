@@ -33,7 +33,8 @@ rules = {"rules": {
         ".read": A + member,
         "$uid": {
             ".read": self_,
-            "nom": {".write": self_, ".validate": "newData.isString() && newData.val().length <= 80"},
+            ".write": f"!newData.exists() && {by_admin_not_self_owner}",  # compte supprimé par un admin
+            "nom": {".write": f"{self_} || ({by_admin_not_self_owner})", ".validate": "newData.isString() && newData.val().length <= 80"},
             "ident": {".write": self_, ".validate": "newData.isString() && newData.val().length <= 120"},
             "at": {".write": self_, ".validate": "newData.isString() && newData.val().length <= 40"},
             "demande": {".write": self_, ".validate": role_ok},
@@ -42,6 +43,7 @@ rules = {"rules": {
             "role": {".write": by_admin_not_self_owner, ".validate": role_ok},
             "fin": {".write": by_admin_not_self_owner, ".validate": "newData.isString() && newData.val().length <= 40"},
             "tlName": {".write": by_admin_not_self_owner, ".validate": "newData.isString() && newData.val().length <= 80"},
+            "del": {".write": by_admin_not_self_owner, ".validate": "newData.isBoolean()"},  # supprimé, gardé pour ses modifications du planning
             "$other": {".validate": False},
         },
     },

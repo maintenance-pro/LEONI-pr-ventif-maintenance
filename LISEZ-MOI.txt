@@ -34,6 +34,10 @@
    - Le manager (ou un Admin) l'autorise dans Réglages > Comptes et rôles :
      bouton « Autoriser comme … », ou la liste « Rôle » pour changer.
      « Accès retiré » bloque le compte.
+   - « Modifier le nom » : change le nom affiché (pas l'e-mail ni le mot de
+     passe). « Supprimer » : le compte disparaît de la liste et ne peut plus
+     entrer ; s'il avait modifié le planning, ces modifications restent.
+     (Pour libérer aussi son e-mail : console Firebase > Authentication.)
 
    Les 3 rôles :
    - Admin      : tout, comme le manager (organisation, réglages, comptes,
