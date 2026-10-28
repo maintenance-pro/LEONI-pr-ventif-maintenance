@@ -89,6 +89,13 @@
    Le nom de la section et des TL déjà en place : seul l'admin les change.
    Chaque modification d'un TL est signée dans le Journal (« par … »).
 
+   Technicien qui n'est pas encore dans le planning préventif : bouton
+   « Modifier » de la section > « Techniciens sans machine » >
+   « + Ajouter un technicien » (nom, matricule, type M ou A·S·T, shift).
+   Il apparaît dans l'organigramme « (sans machine) » ; avec son matricule
+   il peut entrer (onglet Technicien). Pour lui donner des machines :
+   fiche machine > Modifier (son nom est proposé), ou « Ajouter une machine ».
+
    Matricules : bouton « Matricules » (Équipes) ou « Matricules des
    techniciens » (Affectations), ou colonne « Matricule » dans le bouton
    « Modifier » de chaque section. Tapez le matricule puis « Enregistrer ».

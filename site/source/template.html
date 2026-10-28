@@ -524,6 +524,8 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .erow.e-ch{grid-template-columns:minmax(0,1.5fr) minmax(0,.8fr) minmax(0,.9fr) minmax(0,1.2fr) 90px 32px}
 .org-meta{font-size:12px;color:var(--ink-3);margin-top:1px}
 .erow.e-te{grid-template-columns:minmax(0,1.5fr) minmax(0,.8fr) minmax(0,1fr) 84px 32px}
+.erow.e-xt{grid-template-columns:minmax(0,1.5fr) minmax(0,.8fr) minmax(0,1fr) minmax(0,.9fr) 32px}
+.erow.e-xt.one{grid-template-columns:minmax(0,1.5fr) minmax(0,.8fr) minmax(0,.9fr) 32px}
 .erow input,.erow select{height:34px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--ink);padding:0 9px;min-width:0;font-size:14px}
 .erow .z{font-size:12.5px;white-space:nowrap}
 .ex{appearance:none;border:1px solid var(--line);background:var(--surface);border-radius:6px;width:32px;height:32px;cursor:pointer;color:var(--late);font-weight:700;font-size:16px;line-height:1}
@@ -547,7 +549,7 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .gate-tabs{display:flex}.gate-tabs button{flex:1;padding:9px 10px;font-size:14px}
 #f-svc:disabled,#f-who:disabled{opacity:1;cursor:default}
 .me .lk.me-out{font-size:12px;font-weight:600;color:var(--ink-3);margin-top:2px}
-@media (max-width:600px){ .erow.e-ch,.erow.e-te{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px} .erow.e-ch .e-tlsel,.erow.e-ch .z,.erow.e-te .z{grid-column:1/-1} .erow.e-te .e-gap{display:none} }
+@media (max-width:600px){ .erow.e-ch,.erow.e-te,.erow.e-xt,.erow.e-xt.one{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 32px} .erow.e-xt .e-kind{grid-column:1/-1} .erow.e-ch .e-tlsel,.erow.e-ch .z,.erow.e-te .z{grid-column:1/-1} .erow.e-te .e-gap{display:none} }
 .org-sectl{border:2px solid var(--accent);border-radius:6px;padding:8px 10px;background:var(--accent-soft)}
 .org-sectl > b{display:block;font-size:14px;overflow-wrap:anywhere}
 .org-sectl .pp{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;margin-top:4px}
@@ -961,7 +963,8 @@ function copyMat(o, from, to, move){ // un renommage garde le matricule et le co
   const b = move ? a.filter(r => r !== f) : a;
   o.mats = b.some(r => r && r.name === to) ? b : b.concat([{name:to, mat:f.mat}]);
 }
-const liveNames = () => new Set([...SECTIONS.flatMap(x => x.tls.map(t => t.name)), ...machines.map(m => m.chef), ...machines.map(m => m.tech)].filter(Boolean));
+const extraTechs = svc => ((((S.org || {}).extraTechs) || {})[svc] || []).filter(x => x && x.name); // techniciens ajoutés, pas encore dans le planning
+const liveNames = () => new Set([...SECTIONS.flatMap(x => x.tls.map(t => t.name)), ...SECTIONS.flatMap(x => extraTechs(x.id).map(t => t.name)), ...machines.map(m => m.chef), ...machines.map(m => m.tech)].filter(Boolean));
 function mgrName(){ return (S.org && S.org.manager) || "Manager maintenance"; }
 function canOrg(){ return S.mode === "local" || (S.mode === "db" && S.loaded && isAdmin()); }
 function orgSecs(){ // sections dont ce compte modifie l'équipe : null = toutes (admin), sinon celles du TL (vide pour les autres)
@@ -1102,8 +1105,9 @@ function fbMatsMap(){ // matricules saisis par le manager → techMats/<matricul
   for(const r of ((S.org || {}).mats || [])){ if(!r || !r.name) continue; const k = matKey(r.mat || ""); if(MAT_RE.test(k)) o[k] = {nom: r.name}; }
   return o;
 }
-function fbSyncMats(){
-  if(!FIREBASE || !S.fb || !S.db || !S.orgLoaded || S.techMats === undefined || !isAdmin()) return;
+function fbSyncMats(){ // par un admin, ou un TL (il ajoute des techniciens)
+  if(!FIREBASE || !S.fb || !S.db || !S.orgLoaded || S.techMats === undefined) return;
+  const os = orgSecs(); if(os && !os.size) return;
   const want = fbMatsMap(), sig = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k] && o[k].nom]));
   if(sig(want) !== sig(S.techMats || {})) S.fb.rdb.ref("techMats").set(Object.keys(want).length ? want : null).catch(e => console.warn("techMats", e));
 }
@@ -2078,9 +2082,12 @@ function renderAffect(D){
     const sm = machines.filter(m => m.svc === sv.id && !isOut(m)), two = sm.some(m => m.chef);
     const count = key => { const c = new Map(); for(const m of sm){ const k = m[key]; if(k) c.set(k, (c.get(k) || 0) + 1); } return [...c.entries()].sort((a,b) => a[0].localeCompare(b[0], "fr")); };
     const tlName = id => ((sv.tls.find(t => t.id === id) || {}).name || "");
-    const box = (title, list, withInfo) => `<div class="org-tl"><div class="org-tln">${esc(title)}</div><ul>${list.map(([n, k]) => { const ci = withInfo && sv.chefInfo ? sv.chefInfo[n] : null; return `<li>${esc(n)}${matTag(n)} <span class="z">(${k})</span>${ci && ci.shift ? ` <span class="shf">${esc(ci.shift)}</span>` : ""}${ci && ci.tl && tlName(ci.tl) && sv.tls.length > 1 ? ` <span class="z">· TL ${esc(tlName(ci.tl))}</span>` : ""}</li>`; }).join("") || `<li class="z">Aucun</li>`}</ul></div>`;
+    const xs = extraTechs(sv.id);
+    const withX = (list, ast) => { const have = new Set(list.map(x => x[0])); // + techniciens ajoutés sans machine
+      return list.concat(xs.filter(x => (!two || (x.kind === "ast") === ast) && !have.has(x.name)).map(x => [x.name, 0, x.shift])).sort((a, b) => a[0].localeCompare(b[0], "fr")); };
+    const box = (title, list, withInfo) => `<div class="org-tl"><div class="org-tln">${esc(title)}</div><ul>${list.map(([n, k, xsh]) => { const ci = withInfo && sv.chefInfo ? sv.chefInfo[n] : null, shf = (ci && ci.shift) || xsh; return `<li>${esc(n)}${matTag(n)} <span class="z">(${k || "sans machine"})</span>${shf ? ` <span class="shf">${esc(shf)}</span>` : ""}${ci && ci.tl && tlName(ci.tl) && sv.tls.length > 1 ? ` <span class="z">· TL ${esc(tlName(ci.tl))}</span>` : ""}</li>`; }).join("") || `<li class="z">Aucun</li>`}</ul></div>`;
     chart += `<div class="org-col"><div class="org-svc"><span>${esc(sv.name)}</span>${canEditSec(sv.id) ? `<button class="sec-edit" type="button" data-act="secedit" data-svc="${sv.id}">Modifier</button>` : ""}</div>
-      ${two ? box("Techniciens A·S·T · annuel, semestriel, trimestriel", count("chef"), true) + box("Techniciens M · mensuel", count("tech"), false) : box("Techniciens · tous les préventifs", count("tech"), false)}
+      ${two ? box("Techniciens A·S·T · annuel, semestriel, trimestriel", withX(count("chef"), true), true) + box("Techniciens M · mensuel", withX(count("tech"), false), false) : box("Techniciens · tous les préventifs", withX(count("tech"), false), false)}
     </div>`;
   }
   chart += `</div></div>`;
@@ -2167,9 +2174,12 @@ function openSectionEditor(svc){
     tl: t => { const ro = !adm && t.id ? " readonly" : "";
       return `<div class="erow e-tl" data-id="${esc(t.id || "")}"><input class="e-name" type="text" value="${esc(t.name || "")}" placeholder="Nom du TL" list="se-people" aria-label="Nom du TL"${ro}><input class="e-shift" type="text" value="${esc(t.shift || "")}" placeholder="Shift (facultatif)" list="shift-dl" aria-label="Shift"${ro}>${ro ? `<span class="ex-sp"></span>` : `<button type="button" class="ex" data-act="se-del" aria-label="Retirer">×</button>`}</div>`; },
     ast: c => `<div class="erow e-ch" data-old="${esc(c.name || "")}"><input class="e-name" type="text" value="${esc(c.name || "")}" aria-label="Technicien A·S·T"><input class="e-matv" type="text" value="${esc(matOf(c.name))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule de ${esc(c.name || "")}"><input class="e-shift" type="text" value="${esc(c.shift || "")}" placeholder="Shift (facultatif)" list="shift-dl" aria-label="Shift"><select class="e-tlsel" aria-label="Sous le TL">${tlOptions(c.tl)}</select><span class="z">${pl(c.n, "machine")}</span><button type="button" class="ex" data-act="se-del" aria-label="Retirer" title="Retirer : le technicien M de ses machines fera aussi les A·S·T">×</button></div>`,
-    mt: c => `<div class="erow e-te" data-old="${esc(c.name || "")}"><input class="e-name" type="text" value="${esc(c.name || "")}" aria-label="Technicien"><input class="e-matv" type="text" value="${esc(matOf(c.name))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule de ${esc(c.name || "")}"><span class="e-gap"></span><span class="z">${pl(c.n, "machine")}</span><span class="ex-sp"></span></div>`
+    mt: c => `<div class="erow e-te" data-old="${esc(c.name || "")}"><input class="e-name" type="text" value="${esc(c.name || "")}" aria-label="Technicien"><input class="e-matv" type="text" value="${esc(matOf(c.name))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule de ${esc(c.name || "")}"><span class="e-gap"></span><span class="z">${pl(c.n, "machine")}</span><span class="ex-sp"></span></div>`,
+    xt: x => `<div class="erow e-xt${two ? "" : " one"}" data-old="${esc(x.name || "")}"><input class="e-name" type="text" value="${esc(x.name || "")}" placeholder="Nom du technicien" list="se-people" aria-label="Nom du technicien"><input class="e-matv" type="text" value="${esc(matOf(x.name))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule">${two ? `<select class="e-kind" aria-label="Type de technicien"><option value="m" ${x.kind !== "ast" ? "selected" : ""}>Technicien M</option><option value="ast" ${x.kind === "ast" ? "selected" : ""}>Technicien A·S·T</option></select>` : ""}<input class="e-shift" type="text" value="${esc(x.shift || "")}" placeholder="Shift (facultatif)" list="shift-dl" aria-label="Shift"><button type="button" class="ex" data-act="se-del" aria-label="Retirer">×</button></div>`
   };
   const R = S.seRows;
+  const hasM = n => sm.some(m => m.tech === n || m.chef === n);
+  const xs = extraTechs(svc).filter(x => !hasM(x.name)); // déjà des machines : il apparaît plus haut
   dlg.className = "wide";
   dlg.innerHTML = `<form class="dlg" id="se-form" method="dialog">
     <div class="dlg-h"><div><h3 id="dlg-title">Modifier · ${esc(sec.name)}</h3><div class="sub">${pl(sm.length, "machine")} en parc · modifiez ce que vous voulez puis cliquez sur « Enregistrer »</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
@@ -2179,6 +2189,7 @@ function openSectionEditor(svc){
       <fieldset class="rep"><legend>TL · responsables de section</legend><div class="erows" id="se-tl">${sec.tls.map(R.tl).join("")}</div><div><button type="button" class="addp" data-act="se-add" data-k="tl">+ Ajouter un TL</button></div>${adm ? "" : `<p class="z" style="margin:0;font-size:12.5px">Le nom de la section et des TL déjà en place est modifié par l'admin. Vous pouvez ajouter un TL.</p>`}</fieldset>
       ${two ? `<fieldset class="rep"><legend>Techniciens A·S·T · annuel, semestriel, trimestriel</legend><div class="erows" id="se-ast">${asts.map(([n, k]) => R.ast(Object.assign({}, (sec.chefInfo || {})[n], {name:n, n:k}))).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Corrigez le nom, le matricule, le shift et le TL. Taper le nom d'un autre technicien A·S·T lui donne toutes ces machines. Retirer (×) : le technicien M de ces machines fera aussi les A·S·T.</p></fieldset>` : ""}
       <fieldset class="rep"><legend>${two ? "Techniciens M · mensuel" : "Techniciens · tous les préventifs"}</legend><div class="erows" id="se-mt">${mts.map(([n, k]) => R.mt({name:n, n:k})).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Matricule : facultatif, il sert à retrouver le technicien dans la recherche. Corriger un nom le corrige dans toutes les sections ; taper le nom d'un autre technicien fusionne les deux. Pour changer le technicien d'une seule machine : fiche machine › Modifier.</p></fieldset>
+      <fieldset class="rep"><legend>Techniciens sans machine · pas encore dans le planning</legend><div class="erows" id="se-xt">${xs.map(R.xt).join("")}</div><div><button type="button" class="addp" data-act="se-add" data-k="xt">+ Ajouter un technicien</button></div><p class="z" style="margin:0;font-size:12.5px">Un technicien de la section qui n'a pas encore de machine dans le planning préventif. Avec son matricule, il peut entrer dans l'application (onglet « Technicien »). Pour lui confier des machines : fiche machine › Modifier, ou « Ajouter une machine ».</p></fieldset>
       <fieldset class="rep"><legend>Planning de la section</legend><div class="row-btns"><button type="button" class="btn" data-act="se-plan" data-svc="${esc(svc)}">Modifier le planning de la section</button><button type="button" class="btn" data-act="se-addm" data-svc="${esc(svc)}">Ajouter une machine</button>${adm ? `<button type="button" class="btn" data-act="std" data-svc="${esc(svc)}">Standard préventif</button>` : ""}</div><p class="z" style="margin:0;font-size:12.5px">${esc(normText(svc))}</p></fieldset>
       <datalist id="se-people">${people.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
       <datalist id="shift-dl">${SHIFT_SUGG.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
@@ -2195,12 +2206,19 @@ function openSectionEditor(svc){
     const tls = rowsOf("se-tl").filter(r => !r.hidden).map(r => ({id:r.dataset.id || newId("t"), name:cl(r.querySelector(".e-name").value), shift:cl(r.querySelector(".e-shift").value)})).filter(t => t.name);
     const astOps = rowsOf("se-ast").map(r => ({old:r.dataset.old, nu:r.hidden ? "" : cl(r.querySelector(".e-name").value), shift:cl(r.querySelector(".e-shift").value), tl:r.querySelector(".e-tlsel").value, del:r.hidden}));
     const mtOps = rowsOf("se-mt").map(r => ({old:r.dataset.old, nu:cl(r.querySelector(".e-name").value)})).filter(x => x.nu);
+    const xts = rowsOf("se-xt").filter(r => !r.hidden).map(r => ({old: r.dataset.old || "", name: cl(r.querySelector(".e-name").value), kind: r.querySelector(".e-kind") ? r.querySelector(".e-kind").value : "m", shift: cl(r.querySelector(".e-shift").value)})).filter(x => x.name);
+    const xDel = rowsOf("se-xt").filter(r => r.hidden && r.dataset.old).map(r => r.dataset.old);
+    const msg = t => { $("#se-msg").textContent = t; $("#se-msg").className = "lateN"; };
+    const dupX = xts.find((x, i) => xts.findIndex(y => sameName(y.name, x.name)) !== i);
+    if(dupX){ msg(`« ${dupX.name} » est en double.`); return; }
+    const inPlan = xts.find(x => x.name !== x.old && hasM(x.name));
+    if(inPlan){ msg(`${inPlan.name} a déjà des machines dans cette section : il est dans la liste plus haut.`); return; }
     const matCh = new Map(), renamed = new Set(); // nom (après correction) → nouveau matricule
-    for(const r of [...rowsOf("se-ast"), ...rowsOf("se-mt")]){
+    for(const r of [...rowsOf("se-ast"), ...rowsOf("se-mt"), ...rowsOf("se-xt")]){
       if(r.hidden) continue;
       const nu = cl(r.querySelector(".e-name").value), v = cl(r.querySelector(".e-matv").value);
-      if(nu && nu !== r.dataset.old) renamed.add(r.dataset.old);
-      if(nu && v !== matOf(r.dataset.old)) matCh.set(nu, v);
+      if(nu && r.dataset.old && nu !== r.dataset.old) renamed.add(r.dataset.old);
+      if(nu && v !== matOf(r.dataset.old || nu)) matCh.set(nu, v);
     }
     const live = liveNames(); renamed.forEach(n => live.delete(n));
     for(const [n, v] of matCh){
@@ -2223,6 +2241,17 @@ function openSectionEditor(svc){
       }
       o.chefInfo = Object.assign({}, o.chefInfo, {[svc]: astOps.filter(a => !a.del && a.nu && (a.shift || a.tl)).map(a => ({name:a.nu, shift:a.shift, tl:a.tl}))});
       for(const t of mtOps) if(t.nu !== t.old){ renameTech(o, t.old, t.nu); changes.push(`technicien : ${t.old} → ${t.nu}`); }
+      const xOld = extraTechs(svc), sig = a => a.map(x => [x.name, x.kind || "m", x.shift || ""].join("|")).join(",");
+      const xNew = [...xOld.filter(x => hasM(x.name)), ...xts.map(x => ({name: x.name, kind: x.kind, shift: x.shift}))];
+      if(sig(xNew) !== sig(xOld)){
+        for(const x of xts){
+          if(!x.old) changes.push(`technicien ajouté : ${x.name}`);
+          else if(x.old !== x.name){ copyMat(o, x.old, x.name, true); changes.push(`technicien : ${x.old} → ${x.name}`); }
+        }
+        const usedElse = n => machines.some(m => m.tech === n || m.chef === n) || SECTIONS.some(v => (v.id !== svc && extraTechs(v.id).some(x => x.name === n)) || v.tls.some(t => t.name === n));
+        for(const n of xDel){ changes.push(`technicien retiré : ${n}`); if(!usedElse(n) && !matCh.has(n)) setMats(o, [[n, ""]]); } // il ne peut plus entrer
+        o.extraTechs = Object.assign({}, o.extraTechs, {[svc]: xNew});
+      }
       if(matCh.size){ setMats(o, [...matCh]); for(const [n, v] of matCh) changes.push(`matricule ${n} : ${v || "retiré"}`); }
     }, () => `${name} · ${changes.length ? changes.join(" · ") : "enregistrée sans changement"}`);
     if(ok){ closeDlg(); toast(changes.length ? `${name} : ${changes.length} modification${changes.length > 1 ? "s" : ""} enregistrée${changes.length > 1 ? "s" : ""}.` : "Aucun changement."); }
@@ -2236,6 +2265,7 @@ function openMats(){
     const add = (n, l) => { if(n && !seen.has(n)){ seen.add(n); rows.push([n, l]); } };
     sec.tls.forEach(t => add(t.name, "TL de section"));
     for(const n of uniq([...sm.map(m => m.chef), ...sm.map(m => m.tech)])){ const r = techRole(sec.id, n); add(n, r ? "Technicien " + r : "Technicien"); }
+    for(const x of extraTechs(sec.id)) add(x.name, "Technicien · sans machine");
     if(rows.length) groups.push([sec, rows]);
   }
   const n0 = groups.reduce((a, g) => a + g[1].length, 0), nm = groups.reduce((a, g) => a + g[1].filter(r => matOf(r[0])).length, 0);
@@ -3206,7 +3236,8 @@ async function exportCSV(){
 function openMachineEdit(mid){
   if(!canPlan()) return;
   const m = mid ? byId[mid] : null, isNew = !m;
-  const techs = uniq(machines.map(x => x.tech)), chefs = uniq(machines.map(x => x.chef));
+  const xAll = SECTIONS.flatMap(x => extraTechs(x.id)); // techniciens ajoutés sans machine : proposés aussi
+  const techs = uniq([...machines.map(x => x.tech), ...xAll.filter(x => x.kind !== "ast").map(x => x.name)]), chefs = uniq([...machines.map(x => x.chef), ...xAll.filter(x => x.kind === "ast").map(x => x.name)]);
   const v = f => esc(m ? (m[f] || "") : (f === "chef" && chefs.includes(S.filters.who) ? S.filters.who : f === "tech" && techs.includes(S.filters.who) ? S.filters.who : ""));
   const wkOpts = sel => Array.from({length:NWEEKS}, (_,i) => i+1).map(w => `<option value="${w}" ${w===sel?"selected":""}>S${w}</option>`).join("");
   const svcSel = isNew ? `<label class="field">Service<select id="e-svc">${SECTIONS.map(x => `<option value="${x.id}" ${x.id===(S.filters.svc||"coupe")?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>` : "";

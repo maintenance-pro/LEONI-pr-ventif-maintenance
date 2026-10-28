@@ -47,9 +47,9 @@ rules = {"rules": {
             "$other": {".validate": False},
         },
     },
-    "techMats": {
-        ".read": A + admin,
-        ".write": A + admin,
+    "techMats": {  # matricules autorisés : tenus à jour par un admin ou un TL (techniciens ajoutés par le TL)
+        ".read": A + editor,
+        ".write": A + editor,
         "$mat": {
             ".read": f"auth != null && auth.token.email === $mat + '{MAT_DOMAIN}'",
             ".validate": "newData.hasChildren(['nom']) && newData.child('nom').isString() && newData.child('nom').val().length <= 80",
