@@ -79,6 +79,12 @@
    ajouter ou retirer un TL s'applique à toutes les sections de l'encadré.
    Pour une seule section : bouton « Modifier » de la section.
 
+   Compte TL : il a aussi le bouton « Modifier » sur SES sections
+   (Affectations > organigramme) : corriger ses techniciens (nom, matricule,
+   shift, TL), ajouter un TL, ajouter une machine, modifier le planning.
+   Le nom de la section et des TL déjà en place : seul l'admin les change.
+   Chaque modification d'un TL est signée dans le Journal (« par … »).
+
    Matricules : bouton « Matricules » (Équipes) ou « Matricules des
    techniciens » (Affectations), ou colonne « Matricule » dans le bouton
    « Modifier » de chaque section. Tapez le matricule puis « Enregistrer ».

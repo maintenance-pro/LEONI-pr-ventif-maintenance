@@ -963,6 +963,11 @@ function copyMat(o, from, to, move){ // un renommage garde le matricule et le co
 const liveNames = () => new Set([...SECTIONS.flatMap(x => x.tls.map(t => t.name)), ...machines.map(m => m.chef), ...machines.map(m => m.tech)].filter(Boolean));
 function mgrName(){ return (S.org && S.org.manager) || "Manager maintenance"; }
 function canOrg(){ return S.mode === "local" || (S.mode === "db" && S.loaded && isAdmin()); }
+function orgSecs(){ // sections dont ce compte modifie l'équipe : null = toutes (admin), sinon celles du TL (vide pour les autres)
+  if(canOrg()) return null;
+  return (S.mode === "db" && S.loaded && canPlan() && tlScope()) || new Set();
+}
+const canEditSec = svc => { const s = orgSecs(); return !s || s.has(svc); };
 function tlOfTech(svc, tech){
   const g = orgMaps(), k = svc+"|"+tech;
   if(g.tl.has(k)) return g.tl.get(k);
@@ -2025,7 +2030,7 @@ function renderAffect(D){
     const count = key => { const c = new Map(); for(const m of sm){ const k = m[key]; if(k) c.set(k, (c.get(k) || 0) + 1); } return [...c.entries()].sort((a,b) => a[0].localeCompare(b[0], "fr")); };
     const tlName = id => ((sv.tls.find(t => t.id === id) || {}).name || "");
     const box = (title, list, withInfo) => `<div class="org-tl"><div class="org-tln">${esc(title)}</div><ul>${list.map(([n, k]) => { const ci = withInfo && sv.chefInfo ? sv.chefInfo[n] : null; return `<li>${esc(n)}${matTag(n)} <span class="z">(${k})</span>${ci && ci.shift ? ` <span class="shf">${esc(ci.shift)}</span>` : ""}${ci && ci.tl && tlName(ci.tl) && sv.tls.length > 1 ? ` <span class="z">· TL ${esc(tlName(ci.tl))}</span>` : ""}</li>`; }).join("") || `<li class="z">Aucun</li>`}</ul></div>`;
-    chart += `<div class="org-col"><div class="org-svc"><span>${esc(sv.name)}</span>${own ? `<button class="sec-edit" type="button" data-act="secedit" data-svc="${sv.id}">Modifier</button>` : ""}</div>
+    chart += `<div class="org-col"><div class="org-svc"><span>${esc(sv.name)}</span>${canEditSec(sv.id) ? `<button class="sec-edit" type="button" data-act="secedit" data-svc="${sv.id}">Modifier</button>` : ""}</div>
       ${two ? box("Techniciens A·S·T · annuel, semestriel, trimestriel", count("chef"), true) + box("Techniciens M · mensuel", count("tech"), false) : box("Techniciens · tous les préventifs", count("tech"), false)}
     </div>`;
   }
@@ -2036,7 +2041,7 @@ function renderAffect(D){
   const anF = an.filter(a => (!f.svc || a.svc === f.svc) && (!S.scope || S.scope.has(a.svc)));
   const notOwn = `<span class="z">À corriger par le manager</span>`;
   const anRows = anF.map(a => {
-    const sn = SVC[a.svc].name;
+    const sn = SVC[a.svc].name, own = canEditSec(a.svc); // le TL corrige aussi ses sections
     if(a.kind === "nosvctl") return `<div class="anom"><span class="pill week">Section sans TL</span><div><b>${esc(sn)}</b> — aucun responsable de section indiqué</div>${own ? `<button class="btn pri" data-act="secedit" data-svc="${a.svc}">Corriger</button>` : notOwn}</div>`;
     if(a.kind === "multi") return `<div class="anom"><span class="pill late">Deux responsables d'équipe</span><div><b>${esc(a.tech)}</b> · ${esc(sn)} — ${a.chefs.map(([c, n]) => `${pl(n, "machine")} avec ${esc(c)}`).join(", ")}</div>${own ? `<button class="btn pri" data-act="secedit" data-svc="${a.svc}">Corriger</button>` : notOwn}</div>`;
     if(a.kind === "notl") return `<div class="anom"><span class="pill week">Sans responsable d'équipe</span><div><b>${esc(a.tech)}</b> · ${esc(sn)} — ${pl(a.n, "machine")}</div>${own ? (tlsIn(a.svc).length ? `<button class="btn pri" data-act="secedit" data-svc="${a.svc}">Corriger</button>` : `<button class="btn pri" data-act="secedit" data-svc="${a.svc}">Corriger</button>`) : notOwn}</div>`;
@@ -2073,14 +2078,16 @@ function renderAffect(D){
     }
     det += `</div>`;
   }
-  const intro = `<div class="banner">Organisation : <b>Manager › TL de section › techniciens › machines</b>. Chaque machine a un <b>technicien A·S·T</b> (annuel, semestriel, trimestriel) et un <b>technicien M</b> (mensuel) ; sans technicien A·S·T, le technicien M fait tout. ${own ? "Pour changer quoi que ce soit dans une section (nom, TL, techniciens, planning), cliquez sur son bouton <b>Modifier</b>." : "Seul le manager maintenance peut modifier l'organisation."}</div>`;
+  const intro = `<div class="banner">Organisation : <b>Manager › TL de section › techniciens › machines</b>. Chaque machine a un <b>technicien A·S·T</b> (annuel, semestriel, trimestriel) et un <b>technicien M</b> (mensuel) ; sans technicien A·S·T, le technicien M fait tout. ${own ? "Pour changer quoi que ce soit dans une section (nom, TL, techniciens, planning), cliquez sur son bouton <b>Modifier</b>." : orgSecs().size ? "Pour modifier les techniciens d'une de vos sections ou ajouter une personne, cliquez sur son bouton <b>Modifier</b>. Le nom des sections et des TL déjà en place : seul l'admin les change." : "Seul le manager maintenance peut modifier l'organisation."}</div>`;
   $("#v-affectations").innerHTML = intro + chart + fix;
 }
 async function writeOrg(mut, txt){
-  if(!canOrg()){ toast("Réservé au manager maintenance.", "late"); return false; }
+  const os = orgSecs();
+  if(os && !os.size){ toast("Réservé au manager maintenance.", "late"); return false; }
   const o = clone(S.org) || {};
   const extra = mut(o);
   if(typeof txt === "function") txt = txt();
+  if(os) txt += ` · par ${S.meName || "un TL"}`; // modification faite par un TL : l'admin voit qui
   o.log = [{at:new Date().toISOString(), txt}].concat(o.log || []).slice(0, 150);
   if(S.mode === "local"){ S.org = o; saveLocalAll(); buildMachines(); scheduleRender(); return true; }
   try{ await S.db.doc("config/org").set(o); return true; }
@@ -2099,7 +2106,8 @@ async function setMachineTech(mid, tech){
   if(await writeMod(mid, {info})) toast(`${m.num} confiée à ${tech}${chef ? " · équipe " + chef : ""}`);
 }
 function openSectionEditor(svc){
-  if(!canOrg() || !SVC[svc]) return;
+  if(!SVC[svc] || !canEditSec(svc)) return;
+  const adm = canOrg(); // le TL modifie ses techniciens et ajoute des personnes ; le nom de la section et des TL en place : l'admin
   const sec = SVC[svc], sm = machines.filter(m => m.svc === svc && !isOut(m));
   const count = key => { const c = new Map(); for(const m of sm){ const k = m[key]; if(k) c.set(k, (c.get(k) || 0) + 1); } return [...c.entries()].sort((a,b) => a[0].localeCompare(b[0], "fr")); };
   const asts = count("chef"), mts = count("tech"), two = asts.length > 0;
@@ -2107,7 +2115,8 @@ function openSectionEditor(svc){
   const people = uniq([...SECTIONS.flatMap(v => v.tls.map(t => t.name)), ...machines.map(m => m.chef), ...machines.map(m => m.tech)]);
   const tlOptions = sel => `<option value="">Aucun TL précis</option>` + sec.tls.map(t => `<option value="${esc(t.id)}" ${sel === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("");
   S.seRows = {
-    tl: t => `<div class="erow e-tl" data-id="${esc(t.id || "")}"><input class="e-name" type="text" value="${esc(t.name || "")}" placeholder="Nom du TL" list="se-people" aria-label="Nom du TL"><input class="e-shift" type="text" value="${esc(t.shift || "")}" placeholder="Shift (facultatif)" list="shift-dl" aria-label="Shift"><button type="button" class="ex" data-act="se-del" aria-label="Retirer">×</button></div>`,
+    tl: t => { const ro = !adm && t.id ? " readonly" : "";
+      return `<div class="erow e-tl" data-id="${esc(t.id || "")}"><input class="e-name" type="text" value="${esc(t.name || "")}" placeholder="Nom du TL" list="se-people" aria-label="Nom du TL"${ro}><input class="e-shift" type="text" value="${esc(t.shift || "")}" placeholder="Shift (facultatif)" list="shift-dl" aria-label="Shift"${ro}>${ro ? `<span class="ex-sp"></span>` : `<button type="button" class="ex" data-act="se-del" aria-label="Retirer">×</button>`}</div>`; },
     ast: c => `<div class="erow e-ch" data-old="${esc(c.name || "")}"><input class="e-name" type="text" value="${esc(c.name || "")}" aria-label="Technicien A·S·T"><input class="e-matv" type="text" value="${esc(matOf(c.name))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule de ${esc(c.name || "")}"><input class="e-shift" type="text" value="${esc(c.shift || "")}" placeholder="Shift (facultatif)" list="shift-dl" aria-label="Shift"><select class="e-tlsel" aria-label="Sous le TL">${tlOptions(c.tl)}</select><span class="z">${pl(c.n, "machine")}</span><button type="button" class="ex" data-act="se-del" aria-label="Retirer" title="Retirer : le technicien M de ses machines fera aussi les A·S·T">×</button></div>`,
     mt: c => `<div class="erow e-te" data-old="${esc(c.name || "")}"><input class="e-name" type="text" value="${esc(c.name || "")}" aria-label="Technicien"><input class="e-matv" type="text" value="${esc(matOf(c.name))}" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Matricule" aria-label="Matricule de ${esc(c.name || "")}"><span class="e-gap"></span><span class="z">${pl(c.n, "machine")}</span><span class="ex-sp"></span></div>`
   };
@@ -2116,11 +2125,12 @@ function openSectionEditor(svc){
   dlg.innerHTML = `<form class="dlg" id="se-form" method="dialog">
     <div class="dlg-h"><div><h3 id="dlg-title">Modifier · ${esc(sec.name)}</h3><div class="sub">${pl(sm.length, "machine")} en parc · modifiez ce que vous voulez puis cliquez sur « Enregistrer »</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
     <div class="dlg-b">
-      <fieldset class="rep"><legend>Section</legend><label class="field">Nom de la section<input id="se-name" type="text" value="${esc(sec.name)}" required></label></fieldset>
-      <fieldset class="rep"><legend>TL · responsables de section</legend><div class="erows" id="se-tl">${sec.tls.map(R.tl).join("")}</div><div><button type="button" class="addp" data-act="se-add" data-k="tl">+ Ajouter un TL</button></div></fieldset>
+      ${adm ? `<fieldset class="rep"><legend>Section</legend><label class="field">Nom de la section<input id="se-name" type="text" value="${esc(sec.name)}" required></label></fieldset>`
+        : `<input id="se-name" type="hidden" value="${esc(sec.name)}">`}
+      <fieldset class="rep"><legend>TL · responsables de section</legend><div class="erows" id="se-tl">${sec.tls.map(R.tl).join("")}</div><div><button type="button" class="addp" data-act="se-add" data-k="tl">+ Ajouter un TL</button></div>${adm ? "" : `<p class="z" style="margin:0;font-size:12.5px">Le nom de la section et des TL déjà en place est modifié par l'admin. Vous pouvez ajouter un TL.</p>`}</fieldset>
       ${two ? `<fieldset class="rep"><legend>Techniciens A·S·T · annuel, semestriel, trimestriel</legend><div class="erows" id="se-ast">${asts.map(([n, k]) => R.ast(Object.assign({}, (sec.chefInfo || {})[n], {name:n, n:k}))).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Corrigez le nom, le matricule, le shift et le TL. Taper le nom d'un autre technicien A·S·T lui donne toutes ces machines. Retirer (×) : le technicien M de ces machines fera aussi les A·S·T.</p></fieldset>` : ""}
       <fieldset class="rep"><legend>${two ? "Techniciens M · mensuel" : "Techniciens · tous les préventifs"}</legend><div class="erows" id="se-mt">${mts.map(([n, k]) => R.mt({name:n, n:k})).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Matricule : facultatif, il sert à retrouver le technicien dans la recherche. Corriger un nom le corrige dans toutes les sections ; taper le nom d'un autre technicien fusionne les deux. Pour changer le technicien d'une seule machine : fiche machine › Modifier.</p></fieldset>
-      <fieldset class="rep"><legend>Planning de la section</legend><div class="row-btns"><button type="button" class="btn" data-act="se-plan" data-svc="${esc(svc)}">Modifier le planning de la section</button><button type="button" class="btn" data-act="se-addm" data-svc="${esc(svc)}">Ajouter une machine</button><button type="button" class="btn" data-act="std" data-svc="${esc(svc)}">Standard préventif</button></div><p class="z" style="margin:0;font-size:12.5px">${esc(normText(svc))}</p></fieldset>
+      <fieldset class="rep"><legend>Planning de la section</legend><div class="row-btns"><button type="button" class="btn" data-act="se-plan" data-svc="${esc(svc)}">Modifier le planning de la section</button><button type="button" class="btn" data-act="se-addm" data-svc="${esc(svc)}">Ajouter une machine</button>${adm ? `<button type="button" class="btn" data-act="std" data-svc="${esc(svc)}">Standard préventif</button>` : ""}</div><p class="z" style="margin:0;font-size:12.5px">${esc(normText(svc))}</p></fieldset>
       <datalist id="se-people">${people.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
       <datalist id="shift-dl">${SHIFT_SUGG.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
     </div>

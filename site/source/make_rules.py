@@ -72,7 +72,8 @@ rules = {"rules": {
         },
     },
     "suivi": {".read": A + member, "$mid": {".write": A + member}},
-    "config": {".read": A + member, ".write": A + admin},
+    "config": {".read": A + member, ".write": A + admin,
+               "org": {".write": A + editor}},  # organisation : les TL modifient aussi leurs sections (l'écran limite aux leurs)
     "reqs": {".read": A + member, "$uid": {".write": f"auth != null && auth.uid === $uid && {ok}"}},
     "modifs": {".read": A + member, "$uid": {".write": f"auth != null && auth.uid === $uid && {editor}"}},
 }}
