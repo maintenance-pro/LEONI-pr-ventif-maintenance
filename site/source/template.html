@@ -581,6 +581,9 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .org-sectl .tl-edit:hover{background:var(--accent);color:var(--accent-ink)}
 .org-sectl.warn .tl-edit{border-color:var(--late)}
 .acct-acts{white-space:nowrap}
+.ny-det{border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
+.ny-det summary{cursor:pointer}
+.ny-det ul{margin:6px 0 2px;padding-left:20px;font-size:13.5px}
 .acct-acts .btn{margin-left:4px}
 .org-grp > .org-stem{align-self:center}
 .org-grp > .org-cols{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
@@ -1831,7 +1834,7 @@ function renderPlanning(D){
     + `<span><i class="sw" style="background-image:linear-gradient(135deg,var(--accent) 0 6px,transparent 6px);box-shadow:inset 0 0 0 1px var(--line)"></i>Modifié par un responsable</span>`
     + `<span><i class="sw" style="background:var(--done-soft);box-shadow:inset 0 0 0 1.5px var(--done)"></i>Technicien concerné par le prochain préventif</span>`
     + (byTech ? `<span><i class="sw" style="background:var(--tM);opacity:.25;box-shadow:inset 0 0 0 1px var(--line)"></i>Préventif d'un autre technicien</span>` : "");
-  let tools = `<button class="btn pri" data-act="print">Imprimer la semaine (A4)</button>${byTech ? `<div class="seg" role="group" aria-label="Machines de ${esc(who)}"><button data-act="planall" data-v="0" aria-pressed="${!S.planAllM}" title="Machines où ${esc(who)} est en vert">En vert pour lui · ${nMine}</button><button data-act="planall" data-v="1" aria-pressed="${!!S.planAllM}">Toutes ses machines · ${nAllT}</button></div>` : ""}<button class="btn" data-act="xlsxexp">Exporter Excel</button>${can ? `<button class="btn" data-act="xlsximp">Importer Excel</button><button class="btn" data-act="addm">Ajouter une machine</button>` : ""}<button class="btn" data-act="people">${S.showPeople ? "Masquer TL / techniciens" : "Afficher TL / techniciens"}</button><span class="note">Couleurs :</span><div class="seg" role="group" aria-label="Couleurs"><button data-act="colorby" data-v="statut" aria-pressed="${S.colorBy==="statut"}">Statut</button><button data-act="colorby" data-v="type" aria-pressed="${S.colorBy==="type"}">Type de préventif</button></div>`;
+  let tools = `<button class="btn pri" data-act="print">Imprimer la semaine (A4)</button>${byTech ? `<div class="seg" role="group" aria-label="Machines de ${esc(who)}"><button data-act="planall" data-v="0" aria-pressed="${!S.planAllM}" title="Machines où ${esc(who)} est en vert">En vert pour lui · ${nMine}</button><button data-act="planall" data-v="1" aria-pressed="${!!S.planAllM}">Toutes ses machines · ${nAllT}</button></div>` : ""}<button class="btn" data-act="xlsxexp">Exporter Excel</button>${can ? `<button class="btn" data-act="nextyear">Planning ${YEAR + 1}</button><button class="btn" data-act="xlsximp">Importer Excel</button><button class="btn" data-act="addm">Ajouter une machine</button>` : ""}<button class="btn" data-act="people">${S.showPeople ? "Masquer TL / techniciens" : "Afficher TL / techniciens"}</button><span class="note">Couleurs :</span><div class="seg" role="group" aria-label="Couleurs"><button data-act="colorby" data-v="statut" aria-pressed="${S.colorBy==="statut"}">Statut</button><button data-act="colorby" data-v="type" aria-pressed="${S.colorBy==="type"}">Type de préventif</button></div>`;
   if(!ed){
     if(can) tools += `<button class="btn pri" data-act="editmode">Modifier le planning</button>`;
     else if(FIREBASE && S.mode === "db") tools += `<span class="note">Modifier le planning : rôle TL ou Admin</span>`;
@@ -3405,6 +3408,122 @@ function wireAuto(){
   upd(true);
 }
 
+/* ---------- Planning de l'année suivante (proposition) ----------
+   Comme cette année : une machine régulière garde exactement ses semaines (sa « vague », premier préventif en S1 à S4)
+   et la suite de son cycle A M M T M M S M M T M M. Une machine nouvelle, à l'année incomplète, ou qui ne peut pas garder
+   ses semaines (moins de 3 ou plus de 6 semaines après son dernier préventif) rejoint la vague compatible qui charge le
+   moins la section. Les congés restent aux mêmes semaines. */
+const isoWeeksIn = y => isoWeekOf(new Date(y, 11, 28)).w; // la semaine du 28 décembre est la dernière de l'année
+function cyclePos(codes){ // place (0 à 11) du dernier préventif dans le cycle ; D (démarrage) compte comme A
+  const s = codes.map(c => c === "D" ? "A" : c);
+  if(!s.length) return -1;
+  let best = null;
+  for(let o = 0; o < 12; o++){
+    let sc = 0; s.forEach((c, i) => { if(NORM_CYCLE[(o + i) % 12] === c) sc += 1 + i / s.length; }); // les derniers comptent plus
+    if(!best || sc > best.sc) best = {o, sc};
+  }
+  return (best.o + s.length - 1) % 12;
+}
+function nextYearPlan(secIds){
+  const Y = YEAR + 1, NW = isoWeeksIn(Y), NW0 = isoWeeksIn(YEAR), res = {year: Y, nW: NW, w: {}, sec: []};
+  for(const sec of SECTIONS.filter(x => !secIds || secIds.includes(x.id))){
+    const ms = machines.filter(m => m.svc === sec.id && !isOut(m));
+    if(!ms.length) continue;
+    const cg = new Set(sectionNorm(sec.id).conge.filter(w => w <= NW));
+    const prevs = m => [...m.w].map((c, i) => [i + 1, c]).filter(([, c]) => "AMTSD".includes(c));
+    const gapIn = (a, b) => { let g = 0; for(let w = a + 1; w <= b; w++) if(!cg.has(w)) g++; return g; };
+    const regular = m => { const p = prevs(m); if(p.length < 12 || p[0][0] > 6) return false; for(let i = 1; i < p.length; i++){ const g = gapIn(p[i - 1][0], p[i][0]); if(g < 3 || g > 6) return false; } return true; };
+    const avail = []; for(let w = 1; w <= NW; w++) if(!cg.has(w)) avail.push(w); // semaines travaillées
+    const load = new Array(NW + 1).fill(0), l0 = new Array(NW0 + 1).fill(0), notes = [];
+    for(const m of ms) for(const [w] of prevs(m)) if(w <= NW0) l0[w]++;
+    const gapFrom = (m, f) => { const p = prevs(m); return p.length ? NW0 - p[p.length - 1][0] + f : null; }; // semaines entre son dernier préventif et le premier de l'an prochain
+    const write = (m, ws) => { // codes : la suite de son cycle
+      const pos = cyclePos(prevs(m).map(x => x[1])), w = Array(NW).fill(".");
+      ws.forEach((x, k) => { w[x - 1] = NORM_CYCLE[(pos + 1 + k) % 12]; });
+      if((m.w.match(/H/g) || []).length >= 10) for(let x = 1; x <= NW; x++) if(w[x - 1] === "." && !cg.has(x)) w[x - 1] = "H";
+      for(const x of cg) w[x - 1] = "C";
+      res.w[m.id] = w.join("");
+      return w;
+    };
+    const paths = new Map(), put = (ws, d) => ws.forEach(x => { load[x] += d; }), later = [];
+    for(const m of ms){ // 1) comme cette année
+      const own = prevs(m).map(x => x[0]).filter(w => w <= NW), g = own.length ? gapFrom(m, own[0]) : null;
+      if(regular(m) && g >= 3 && g <= 6){ paths.set(m, own); put(own, 1); } else later.push(m);
+    }
+    const why = m => { const p = prevs(m);
+      if(m.added && p.length < 12) return "nouvelle machine";
+      if(!p.length) return "aucun préventif cette année";
+      if(m._etat && m._etat.k === "arret") return "en arrêt cette année";
+      if(p.length < 12) return "année incomplète (" + p.length + " préventifs)";
+      return "ses semaines ne suivent pas son dernier préventif"; };
+    const firsts = m => { // premier préventif possible : 3 à 6 semaines après le dernier de cette année
+      const ok = avail.filter(w => w <= 6 && (gapFrom(m, w) == null || (gapFrom(m, w) >= 3 && gapFrom(m, w) <= 6)));
+      return ok.length ? ok : avail.filter(w => w <= 4); // dernier préventif trop loin : reprise dès le début de l'année
+    };
+    const path = m => { // 12 préventifs espacés de 4 ou 5 semaines travaillées, par les semaines les moins chargées
+      const n = avail.length, K = 12, INF = 1e9, mine = new Set(prevs(m).map(x => x[0]));
+      const c = w => (load[w] + 1) * (load[w] + 1) - (mine.has(w) ? 0.01 : 0); // une semaine déjà chargée coûte beaucoup plus ; à égalité, ses semaines de cette année
+      for(const gaps of [[4, 5], [3, 4, 5, 6]]){
+        const cost = Array.from({length: K}, () => new Array(n).fill(INF)), from = Array.from({length: K}, () => new Array(n).fill(-1));
+        for(const w of firsts(m)) cost[0][avail.indexOf(w)] = c(w);
+        for(let k = 1; k < K; k++) for(let i = 0; i < n; i++) if(cost[k - 1][i] < INF) for(const g of gaps){
+          const j = i + g; if(j < n && cost[k - 1][i] + c(avail[j]) < cost[k][j]){ cost[k][j] = cost[k - 1][i] + c(avail[j]); from[k][j] = i; }
+        }
+        let best = -1;
+        for(let j = 0; j < n; j++) if(avail[j] >= NW - 5 && cost[K - 1][j] < INF && (best < 0 || cost[K - 1][j] < cost[K - 1][best])) best = j; // le dernier en fin d'année (au plus 6 semaines avant le premier de l'année d'après)
+        if(best < 0) continue;
+        const ws = []; for(let k = K - 1, j = best; k >= 0; j = from[k][j], k--) ws.unshift(avail[j]);
+        return ws;
+      }
+      return firsts(m).slice(0, 1);
+    };
+    later.sort((a, b) => firsts(a).length - firsts(b).length); // les plus contraintes d'abord
+    for(const m of later){ const ws = path(m); paths.set(m, ws); put(ws, 1); } // 2) les semaines les moins chargées
+    for(let pass = 0; pass < 3; pass++) for(const m of later){ put(paths.get(m), -1); const ws = path(m); paths.set(m, ws); put(ws, 1); } // puis chacune revoit sa place en tenant compte des autres
+    const st = (l, n) => { const v = []; for(let x = 1; x <= n; x++) if(!cg.has(x)) v.push(l[x] || 0); return {avg: v.reduce((a, b) => a + b, 0) / Math.max(1, v.length), max: Math.max(0, ...v), min: Math.min(...v)}; };
+    const moved = new Set(later);
+    for(let pass = 0; pass < 3; pass++){ // 3) section encore déséquilibrée : une machine change de semaines seulement si cela retire vraiment un pic
+      const s = st(load, NW); if(s.max - s.min <= Math.max(2, s.avg * 0.2)) break;
+      const need = Math.max(3, s.avg * 0.5), mc = ws => ws.reduce((a, x) => a + 2 * load[x] + 1, 0);
+      for(const m of ms){
+        const cur = paths.get(m); put(cur, -1);
+        const cand = path(m);
+        if(mc(cur) - mc(cand) >= need){ paths.set(m, cand); put(cand, 1); moved.add(m); } else put(cur, 1);
+      }
+    }
+    for(const m of ms){
+      const w = write(m, paths.get(m));
+      if(moved.has(m)) notes.push({m, why: later.includes(m) ? why(m) : "décalée pour équilibrer la charge", first: w.findIndex(x => "AMTSD".includes(x)) + 1, code: w.find(x => "AMTSD".includes(x))});
+    }
+    const nW0s = Math.max(0, ...ms.filter(m => BASE_BY_ID[m.id]).map(m => BASE_BY_ID[m.id].w.length)) || NW0; // colonnes du planning Excel de la section
+    res.sec.push({id: sec.id, name: sec.name, n: ms.length, same: ms.length - moved.size, notes, conge: [...cg], before: st(l0, nW0s), after: st(load, NW), load, l0});
+  }
+  return res;
+}
+function openNextYear(){
+  if(!canPlan()) return;
+  const vis = SECTIONS.filter(x => !S.scope || S.scope.has(x.id)).map(x => x.id);
+  const nx = nextYearPlan(vis), Y = nx.year, f1 = v => v.toFixed(1).replace(".", ",");
+  S.nextYear = nx;
+  const rows = nx.sec.map(s => `<tr><td><b>${esc(s.name)}</b></td><td class="r num">${s.n}</td><td class="r num">${s.same}</td><td class="r num">${s.notes.length}</td><td class="r num">${f1(s.before.avg)} · ${s.before.max}</td><td class="r num"><b>${f1(s.after.avg)} · ${s.after.max}</b></td></tr>`).join("");
+  const det = nx.sec.filter(s => s.notes.length).map(s => `<details class="ny-det"><summary><b>${esc(s.name)}</b> · ${s.notes.length} machine${s.notes.length > 1 ? "s" : ""} replacée${s.notes.length > 1 ? "s" : ""}</summary><ul>${s.notes.map(n => `<li><b>${esc(n.m.num)}</b> <span class="z">${esc(n.m.type)}</span> · ${esc(n.why)} → premier préventif ${esc(n.code)} en S${n.first}</li>`).join("")}</ul></details>`).join("");
+  const cgTxt = [...new Set(nx.sec.flatMap(s => s.conge))].sort((a, b) => a - b);
+  dlg.className = "wide";
+  dlg.innerHTML = `<div class="dlg">
+    <div class="dlg-h"><div><h3 id="dlg-title">Planning ${Y} · proposition</h3><div class="sub">Préparé à partir du planning ${YEAR} actuel (machines ajoutées, modifications et machines sorties du parc compris)</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b">
+      <p style="margin:0">Même rythme que ${YEAR} : chaque machine garde ses semaines et la suite de son cycle (A · M · M · T · M · M · S · M · M · T · M · M). Les machines nouvelles, incomplètes ou qui ne peuvent pas garder leurs semaines sont replacées : 12 préventifs espacés de 4 ou 5 semaines, sur les semaines qui chargent le moins la section, le premier 3 à 6 semaines après leur dernier préventif de ${YEAR}. ${Y} compte ${nx.nW} semaines${cgTxt.length ? ` ; congés gardés en S${cgTxt.join(" et S")}` : ""}.</p>
+      <div class="scroll"><table class="t"><thead><tr><th>Section</th><th class="r">Machines</th><th class="r">Comme ${YEAR}</th><th class="r">Replacées</th><th class="r">Charge ${YEAR} moy. · max</th><th class="r">Charge ${Y} moy. · max</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="z" style="margin:0;font-size:12.5px">Charge = nombre de préventifs (A, T, S, M, D) par semaine, hors congés et contrôles hebdomadaires H.</p>
+      ${det}
+      ${sectionPicker("ny-secs").replace(/<input type="checkbox" value="([^"]+)"/g, (s, id) => vis.includes(id) ? s + " checked" : s + " disabled")}
+      <p class="z" style="margin:0;font-size:12.5px">Le fichier a une feuille par section, au format de votre planning, plus « Charge par semaine » et « Remarques ». Relisez-le : si les congés ${Y} changent ou si vous ajoutez des machines d'ici la fin de l'année, refaites-le.</p>
+    </div>
+    <div class="dlg-f"><span class="z" id="ny-msg"></span><span class="sp"></span><button type="button" class="btn" data-act="close">Fermer</button><button type="button" class="btn pri" data-act="nextyeargo">Télécharger l'Excel ${Y}</button></div>
+  </div>`;
+  if(!dlg.open) dlg.showModal();
+}
+
 /* ---------- Excel : export (même format que le planning, réimportable) et import avec aperçu ---------- */
 const XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js";
 let xlsxP = null;
@@ -3445,23 +3564,24 @@ async function saveFile(filename, data){
 }
 const XL_FILL = {M:"00B050", T:"FFFF00", S:"00B0F0", A:"FF0000", C:"C9A27E", D:"BFBFBF", H:"F2F2F2"};
 const sheetName = n => n.replace(/[\[\]:*?\/\\]/g, " ").slice(0, 31);
-async function exportXlsx(secIds, withSuivi){
+async function exportXlsx(secIds, withSuivi, nx){ // nx : planning de l'année suivante (nextYearPlan)
   let X; try{ X = await loadXlsx(); }catch(e){ toast("Module Excel indisponible : vérifiez la connexion internet.", "late"); return; }
   const D = S.D, wb = X.utils.book_new(), border = {style:"thin", color:{rgb:"BFBFBF"}};
   const nk = n => (n || "").replace(/\s+/g, "");
-  const ms = machines.filter(m => secIds.includes(m.svc) && !isOut(m));
+  const ms = machines.filter(m => secIds.includes(m.svc) && !isOut(m) && (!nx || nx.w[m.id]));
+  const wOf = m => nx ? nx.w[m.id] : m.w, yr = nx ? nx.year : YEAR;
   for(const sec of SECTIONS.filter(x => secIds.includes(x.id))){
     const rows = ms.filter(m => m.svc === sec.id).sort((a,b) => nk(a.num).localeCompare(nk(b.num), "fr", {numeric:true}));
     if(!rows.length) continue;
-    const nW = Math.max(...rows.map(m => m.w.length));
+    const nW = nx ? nx.nW : Math.max(...rows.map(m => m.w.length));
     const head = ["tl", "Techniciens A S T", "Techniciens M", "Projets", "N° des machines", "Types des machines", "N° de série", ...Array.from({length:nW}, (_, i) => "S" + (i + 1))];
-    const aoa = [[`Planning préventif ${YEAR} · ${sec.name}${sec.tl ? " · TL : " + sec.tl : ""} · ${rows.length} machines`], [`Exporté le ${new Date().toLocaleDateString("fr-FR")} · semaine en cours S${CW} · codes : M mensuel, T trimestriel, S semestriel, A annuel, H hebdomadaire, D démarrage, C congé`], head];
-    for(const m of rows) aoa.push([sec.tls.map(t => t.name).join(" & "), m.chef || "", m.tech || "", m.proj || "", m.num, m.type, m.serie, ...Array.from({length:nW}, (_, i) => { const c = m.w[i] || "."; return c === "." ? null : c; })]);
+    const aoa = [[`Planning préventif ${yr}${nx ? " (proposition)" : ""} · ${sec.name}${sec.tl ? " · TL : " + sec.tl : ""} · ${rows.length} machines`], [`${nx ? `Préparé le ${new Date().toLocaleDateString("fr-FR")} à partir du planning ${YEAR}` : `Exporté le ${new Date().toLocaleDateString("fr-FR")} · semaine en cours S${CW}`} · codes : M mensuel, T trimestriel, S semestriel, A annuel, H hebdomadaire, D démarrage, C congé`], head];
+    for(const m of rows) aoa.push([sec.tls.map(t => t.name).join(" & "), m.chef || "", m.tech || "", m.proj || "", m.num, m.type, m.serie, ...Array.from({length:nW}, (_, i) => { const c = wOf(m)[i] || "."; return c === "." ? null : c; })]);
     const ws = X.utils.aoa_to_sheet(aoa);
     ws.A1.s = {font:{bold:true, sz:14}};
     for(let c = 0; c < head.length; c++){
       const a = X.utils.encode_cell({r:2, c}); if(!ws[a]) continue;
-      ws[a].s = {font:{bold:true, color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb: c >= 7 && c - 6 === CW ? "0F5F6E" : "13202B"}}, alignment:{horizontal:"center", vertical:"center", wrapText:true}, border:{top:border, bottom:border, left:border, right:border}};
+      ws[a].s = {font:{bold:true, color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb: !nx && c >= 7 && c - 6 === CW ? "0F5F6E" : "13202B"}}, alignment:{horizontal:"center", vertical:"center", wrapText:true}, border:{top:border, bottom:border, left:border, right:border}};
     }
     for(let r = 3; r < aoa.length; r++) for(let c = 0; c < head.length; c++){
       const a = X.utils.encode_cell({r, c});
@@ -3476,6 +3596,23 @@ async function exportXlsx(secIds, withSuivi){
   }
   const sh = ["Section", "TL", "Technicien A·S·T", "Technicien M", "Technicien responsable", "Projet", "N° machine", "Type machine", "N° de série", "Semaine prévue", "Préventif", "Statut", "Semaine effective", "Date réalisation", "Réalisé par", "Motif report", "Observations"];
   const suivi = !withSuivi ? null : [sh, ...D.items.filter(it => secIds.includes(it.m.svc) && !isOut(it.m)).map(it => [SVC[it.m.svc] ? SVC[it.m.svc].name : it.m.svc, SVC[it.m.svc] ? SVC[it.m.svc].tl : "", it.m.chef || "", it.m.tech || "", itemTech(it), it.m.proj || "", it.m.num, it.m.type, it.m.serie, "S" + it.w, TYPES[it.code], it.st === "fait" ? doneLabel(it) : STATUS[it.st], "S" + it.ew, it.rec && it.rec.d ? fmtISO(it.rec.d) : "", it.rec && it.rec.par || "", it.rec && it.rec.motif || "", it.rec && it.rec.c || ""])];
+  if(nx){ // charge par semaine et remarques
+    const ss = nx.sec.filter(s => secIds.includes(s.id)), wk = Array.from({length:nx.nW}, (_, i) => "S" + (i + 1));
+    const ch = [[`Charge par semaine : nombre de préventifs A, T, S, M, D (hors congés et contrôles H)`], ["Section", "Année", "Moyenne", "Max", ...wk]];
+    for(const s of ss){
+      ch.push([s.name, nx.year, Math.round(s.after.avg * 10) / 10, s.after.max, ...wk.map((_, i) => s.load[i + 1])]);
+      ch.push([s.name, YEAR, Math.round(s.before.avg * 10) / 10, s.before.max, ...wk.map((_, i) => s.l0[i + 1] ?? null)]);
+    }
+    const ws3 = X.utils.aoa_to_sheet(ch);
+    ws3["!cols"] = [{wch:24}, {wch:7}, {wch:9}, {wch:6}, ...wk.map(() => ({wch:4.5}))];
+    X.utils.book_append_sheet(wb, ws3, "Charge par semaine");
+    const rq = [["Section", "N° machine", "Type", "Technicien M", "Pourquoi elle est replacée", "Premier préventif " + nx.year, "Semaines " + nx.year]];
+    for(const s of ss) for(const n of s.notes) rq.push([s.name, n.m.num, n.m.type, n.m.tech || "", n.why, n.code + " en S" + n.first, [...nx.w[n.m.id]].map((c, i) => "AMTSD".includes(c) ? c + (i + 1) : "").filter(Boolean).join(" ")]);
+    if(rq.length === 1) rq.push(["Toutes les machines gardent leurs semaines de " + YEAR + "."]);
+    const ws4 = X.utils.aoa_to_sheet(rq);
+    ws4["!cols"] = [{wch:20}, {wch:16}, {wch:22}, {wch:24}, {wch:44}, {wch:20}, {wch:70}];
+    X.utils.book_append_sheet(wb, ws4, "Remarques");
+  }
   if(suivi){
     const ws2 = X.utils.aoa_to_sheet(suivi);
     for(let c = 0; c < sh.length; c++){ const a = X.utils.encode_cell({r:0, c}); ws2[a].s = {font:{bold:true, color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"13202B"}}}; }
@@ -3484,7 +3621,7 @@ async function exportXlsx(secIds, withSuivi){
   }
   const buf = X.write(wb, {bookType:"xlsx", type:"array"});
   const tag = secIds.length === 1 ? (SVC[secIds[0]] ? SVC[secIds[0]].name : secIds[0]).replace(/[^\w\u00C0-\u017F-]+/g, "-") : secIds.length + "-sections";
-  await saveFile(`planning-preventif-${YEAR}-${tag}-S${CW}.xlsx`, new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  await saveFile(nx ? `planning-preventif-${nx.year}-proposition-${tag}.xlsx` : `planning-preventif-${YEAR}-${tag}-S${CW}.xlsx`, new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
 }
 const NAME_ALIASES = {"Abdelali Moustain":"Abdelali Moustaine", "Abdelali":"Abdelali Moustaine", "Ayoub Elarrafi":"Ayoub El Arrafi", "Zazoul Zouhair":"Zouhair Zazoule", "Loukrimi Mohamed Rachid Oumjoud":"Loukrimi Mohamed & Rachid Oumjoud"};
 const xclean = v => String(v == null ? "" : v).replace(/ /g, " ").replace(/\s+/g, " ").trim();
@@ -3795,6 +3932,15 @@ document.addEventListener("click", async ev => {
     }
     case "export": exportCSV(); break;
     case "xlsxexp": openExport(); break;
+    case "nextyear": openNextYear(); break;
+    case "nextyeargo": {
+      const ids = pickedSections("ny-secs");
+      if(!ids.length){ $("#ny-msg").textContent = "Choisissez au moins une section."; break; }
+      el.disabled = true; $("#ny-msg").textContent = "Préparation du fichier…";
+      await exportXlsx(ids, false, S.nextYear || nextYearPlan());
+      el.disabled = false; $("#ny-msg").textContent = "";
+      break;
+    }
     case "print": openPrint(); break;
     case "printgo": {
       el.disabled = true; $("#pr-msg").textContent = "Préparation de la fiche…";

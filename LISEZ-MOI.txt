@@ -102,6 +102,16 @@
    Ensuite, taper un matricule dans la recherche (en haut) choisit
    directement la personne et affiche son planning.
 
+   Planning de l'année prochaine : Planning > bouton « Planning 2027 »
+   (admin et TL). Même rythme que cette année : chaque machine garde ses
+   semaines et la suite de son cycle A M M T M M S M M T M M. Les machines
+   nouvelles ou incomplètes sont placées sur les semaines les moins chargées
+   (12 préventifs, tous les 4 ou 5 semaines, le premier 3 à 6 semaines après
+   leur dernier de l'année). Le tableau montre la charge par semaine avant /
+   après ; « Télécharger l'Excel 2027 » donne une feuille par section (même
+   format que le planning) + « Charge par semaine » + « Remarques ».
+   Refaites-le en décembre si vous ajoutez des machines d'ici là.
+
    Imprimer la fiche de la semaine d'un technicien (papier A4) :
    1. Planning : choisissez la section puis le technicien dans « Responsable ».
    2. Cliquez « Imprimer la semaine (A4) » (aussi dans Alertes > Cette semaine).
