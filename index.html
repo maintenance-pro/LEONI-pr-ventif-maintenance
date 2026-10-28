@@ -1779,7 +1779,7 @@ function renderAlertes(D){
 
   const wkShown = S.hideDone ? wk.filter(it => it.st !== "fait") : wk;
   const hideBtn = `<button class="btn" data-act="print">Imprimer (A4)</button><button class="btn" data-act="hidedone">${S.hideDone ? "Afficher les faits" : "Masquer les faits"}</button>`;
-  const repBtn = `${late.length || wk.some(it => it.st === "semaine") ? `<button class="btn pri" data-act="report">Envoyer retards + semaine (WhatsApp / e-mail)</button>` : ""}${notifSupported() && !notifOn() && Notification.permission !== "denied" ? `<button class="btn" data-act="notifon">Activer les notifications</button>` : ""}`;
+  const repBtn = `${canPlan() && (late.length || wk.some(it => it.st === "semaine")) ? `<button class="btn pri" data-act="report">Envoyer retards + semaine (WhatsApp / e-mail)</button>` : ""}${notifSupported() && !notifOn() && Notification.permission !== "denied" ? `<button class="btn" data-act="notifon">Activer les notifications</button>` : ""}`;
   $("#v-alertes").innerHTML = alarm + kpis + svcTable +
     listPanel("p-late", "En retard", `Planifiés avant S${CW}, non faits`, late, {empty:"Aucun préventif en retard.", tools:repBtn}) +
     listPanel("p-week", `Cette semaine · S${CW}`, esc(CW<=NWEEKS?weekRange(CW):""), wkShown, {empty: wk.length ? "Tous les préventifs de la semaine sont faits." : "Aucun préventif planifié cette semaine.", tools:hideBtn}) +
@@ -4020,7 +4020,7 @@ document.addEventListener("click", async ev => {
     case "colorby": S.colorBy = el.dataset.v; saveUI(); render(); break;
     case "mats": openMats(); break;
     case "planall": S.planAllM = el.dataset.v === "1"; render(); break;
-    case "report": openReport(); break;
+    case "report": if(canPlan()) openReport(); break; // admin et TL seulement
     case "sendwa": sendWa(el.dataset.who); break;
     case "sendmail": sendMail(el.dataset.who); break;
     case "notifon": enableNotif(); break;
