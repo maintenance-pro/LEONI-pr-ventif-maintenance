@@ -585,6 +585,14 @@ dialog.wide{width:min(880px,calc(100vw - 24px))}
 .ny-det{border:1px solid var(--line);border-radius:var(--r);padding:6px 10px}
 .ny-det summary{cursor:pointer}
 .ny-det ul{margin:6px 0 2px;padding-left:20px;font-size:13.5px}
+.ny-t .ny-cg{width:110px;height:30px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--ink);padding:0 8px;font-size:14px}
+.ny-t .ny-cg:disabled{opacity:.6}
+.arch-q{flex:1;min-width:180px;height:34px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--ink);padding:0 10px;font-size:14px}
+.arch-grid{display:flex;flex-direction:column;gap:4px;min-width:calc(210px + var(--nw) * 17px);max-height:58vh}
+.arch-row{display:grid;grid-template-columns:200px minmax(0,1fr);gap:8px;align-items:center}
+.arch-n{font-size:13px;line-height:1.25;overflow:hidden}
+.arch-strip{grid-template-columns:repeat(var(--nw),minmax(15px,1fr))}
+.arch-strip span{height:20px;font-size:9.5px}
 .acct-acts .btn{margin-left:4px}
 .org-grp > .org-stem{align-self:center}
 .org-grp > .org-cols{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
@@ -1120,7 +1128,7 @@ function fbLeave(){
   for(const k of Object.keys(modSubs)){ modSubs[k](); delete modSubs[k]; }
   Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}, std:{}, techMats:undefined, orgLoaded:false});
   NT.late = null; NT.pend = null;
-  Object.assign(S, {aiKey: undefined, helperAt: "", helperProv: "", helperUse: {}}); HP.open = false; HP.busy = false; HP.ctx = null; HP.loadedFor = null;
+  Object.assign(S, {aiKey: undefined, helperAt: "", helperProv: "", helperUse: {}, archIdx: null, archBusy: new Set(), archTry: 0}); HP.open = false; HP.busy = false; HP.ctx = null; HP.loadedFor = null;
   buildMachines();
 }
 async function fbSession(u){
@@ -1167,6 +1175,9 @@ function fbEnter(){
   S.canWrite = true; S.mode = "db"; S.loaded = false;
   const ur = S.fb.rdb.ref("users"), uh = sn => { S.users = sn.val() || {}; syncModSubs(); buildMachines(); scheduleRender(); fbSyncMats(); }; // les rôles TL / Admin décident quelles modifications du planning s'appliquent
   ur.on("value", uh, () => {});
+  const ar = S.fb.rdb.ref("archIdx"), ah = sn => { S.archIdx = sn.val() || {}; autoArchive(); if(dlg.open && $("#arch-list")) openArchives(); }; // admins et TL
+  ar.on("value", ah, () => { S.archIdx = null; });
+  fbData.push(() => ar.off("value", ah));
   const tr = S.fb.rdb.ref("techMats"), th = sn => { S.techMats = sn.val() || {}; fbSyncMats(); }; // lisible par les admins seulement
   tr.on("value", th, () => { S.techMats = undefined; });
   const hr = S.fb.rdb.ref("helperKey/at"), hh = sn => { const v = sn.val() || ""; if(v !== S.helperAt) S.aiKey = undefined; S.helperAt = v; scheduleRender(); }; // la clé elle-même n'est lue qu'au besoin
@@ -1835,7 +1846,7 @@ function renderPlanning(D){
     + `<span><i class="sw" style="background-image:linear-gradient(135deg,var(--accent) 0 6px,transparent 6px);box-shadow:inset 0 0 0 1px var(--line)"></i>Modifié par un responsable</span>`
     + `<span><i class="sw" style="background:var(--done-soft);box-shadow:inset 0 0 0 1.5px var(--done)"></i>Technicien concerné par le prochain préventif</span>`
     + (byTech ? `<span><i class="sw" style="background:var(--tM);opacity:.25;box-shadow:inset 0 0 0 1px var(--line)"></i>Préventif d'un autre technicien</span>` : "");
-  let tools = `<button class="btn pri" data-act="print">Imprimer la semaine (A4)</button>${byTech ? `<div class="seg" role="group" aria-label="Machines de ${esc(who)}"><button data-act="planall" data-v="0" aria-pressed="${!S.planAllM}" title="Machines où ${esc(who)} est en vert">En vert pour lui · ${nMine}</button><button data-act="planall" data-v="1" aria-pressed="${!!S.planAllM}">Toutes ses machines · ${nAllT}</button></div>` : ""}<button class="btn" data-act="xlsxexp">Exporter Excel</button>${can ? `<button class="btn" data-act="nextyear">Planning ${YEAR + 1}</button><button class="btn" data-act="xlsximp">Importer Excel</button><button class="btn" data-act="addm">Ajouter une machine</button>` : ""}<button class="btn" data-act="people">${S.showPeople ? "Masquer TL / techniciens" : "Afficher TL / techniciens"}</button><span class="note">Couleurs :</span><div class="seg" role="group" aria-label="Couleurs"><button data-act="colorby" data-v="statut" aria-pressed="${S.colorBy==="statut"}">Statut</button><button data-act="colorby" data-v="type" aria-pressed="${S.colorBy==="type"}">Type de préventif</button></div>`;
+  let tools = `<button class="btn pri" data-act="print">Imprimer la semaine (A4)</button>${byTech ? `<div class="seg" role="group" aria-label="Machines de ${esc(who)}"><button data-act="planall" data-v="0" aria-pressed="${!S.planAllM}" title="Machines où ${esc(who)} est en vert">En vert pour lui · ${nMine}</button><button data-act="planall" data-v="1" aria-pressed="${!!S.planAllM}">Toutes ses machines · ${nAllT}</button></div>` : ""}<button class="btn" data-act="xlsxexp">Exporter Excel</button>${can ? `<button class="btn" data-act="nextyear">Planning ${YEAR + 1}</button>${FIREBASE ? `<button class="btn" data-act="archives">Archives</button>` : ""}<button class="btn" data-act="xlsximp">Importer Excel</button><button class="btn" data-act="addm">Ajouter une machine</button>` : ""}<button class="btn" data-act="people">${S.showPeople ? "Masquer TL / techniciens" : "Afficher TL / techniciens"}</button><span class="note">Couleurs :</span><div class="seg" role="group" aria-label="Couleurs"><button data-act="colorby" data-v="statut" aria-pressed="${S.colorBy==="statut"}">Statut</button><button data-act="colorby" data-v="type" aria-pressed="${S.colorBy==="type"}">Type de préventif</button></div>`;
   if(!ed){
     if(can) tools += `<button class="btn pri" data-act="editmode">Modifier le planning</button>`;
     else if(FIREBASE && S.mode === "db") tools += `<span class="note">Modifier le planning : rôle TL ou Admin</span>`;
@@ -1897,7 +1908,7 @@ function renderEquipes(D){
   const SHOWN = ["late", "week", "done"]; // vue allégée : seulement ce qui demande une action ou vient d'être fait
   const leg = SHOWN.map(k => `<span class="mchip ms-${k}">${esc(MS_LABEL[k])}</span>`).join("");
   const its = D.items.filter(it => matchIt(it));
-  let html = `<div class="mgr-line"><span class="eyebrow">Manager maintenance</span><b>${esc(mgrName())}</b></div><div class="eq-top"><div class="legend">${leg}</div><div class="tools" style="display:flex;gap:6px">${canOrg() ? `<button class="btn" data-act="mats">Matricules</button>` : ""}<button class="btn" data-act="foldall" data-v="0">Tout déplier</button><button class="btn" data-act="foldall" data-v="1">Tout réduire</button></div></div>`;
+  let html = `<div class="mgr-line"><span class="eyebrow">Manager maintenance</span><b>${esc(mgrName())}</b></div><div class="eq-top"><div class="legend">${leg}</div><div class="tools" style="display:flex;gap:6px">${canOrg() || orgSecs().size ? `<button class="btn" data-act="mats">Matricules</button>` : ""}<button class="btn" data-act="foldall" data-v="0">Tout déplier</button><button class="btn" data-act="foldall" data-v="1">Tout réduire</button></div></div>`;
   if(!ms.length) html += `<div class="panel"><div class="empty">Aucune machine ne correspond aux filtres.</div></div>`;
   for(const sec of SECTIONS){
     const sm = ms.filter(m => m.svc === sec.id);
@@ -2075,9 +2086,7 @@ function renderAffect(D){
     + tlsIn(svc).map(t => `<option ${!placeholder && t === cur ? "selected" : ""}>${esc(t)}</option>`).join("");
   const multiSet = new Set(an.filter(a => a.kind === "multi").map(a => a.svc+"|"+a.tech));
 
-  const resetBtn = own && S.org && ((S.org.tl || []).length || (S.org.tlRename || []).length || Object.keys(S.org.tls || {}).length || (S.org.techRename || []).length)
-    ? `<button class="btn danger" data-act="orgreset" data-svc="${f.svc}">Revenir aux équipes de l'Excel${f.svc ? " · " + esc(SVC[f.svc].name) : ""}</button>` : "";
-  let chart = `<div class="panel"><div class="panel-h"><h2>Organigramme</h2><span class="note">Manager › TL de section › techniciens A·S·T et techniciens M (nombre de machines). En rouge : à corriger.</span><div class="tools">${own ? `<button class="btn" data-act="std" data-svc="">Standards préventifs</button><button class="btn" data-act="mats">Matricules des techniciens</button><button class="btn pri" data-act="secform" data-svc="">Ajouter une section</button>` : ""}${resetBtn}</div></div><div class="org">
+  let chart = `<div class="panel"><div class="panel-h"><h2>Organigramme</h2><span class="note">Manager › TL de section › techniciens A·S·T et techniciens M (nombre de machines). En rouge : à corriger.</span><div class="tools">${own || orgSecs().size ? `<button class="btn" data-act="std" data-svc="">Standards préventifs</button><button class="btn" data-act="mats">Matricules des techniciens</button>` : ""}${own ? `<button class="btn pri" data-act="secform" data-svc="">Ajouter une section</button>` : ""}</div></div><div class="org">
     <div class="org-mgr"><div class="eyebrow">Manager maintenance</div><b>${esc(mgrName())}</b>${own ? `<button class="lk" data-act="orgform" data-k="manager">${S.org && S.org.manager ? "Modifier le nom" : "Indiquer votre nom"}</button>` : ""}</div>
     <div class="org-stem"></div><div class="org-groups">`;
   for(const g of tlGroups(svcs)){
@@ -2194,7 +2203,7 @@ function openSectionEditor(svc){
       ${two ? `<fieldset class="rep"><legend>Techniciens A·S·T · annuel, semestriel, trimestriel</legend><div class="erows" id="se-ast">${asts.map(([n, k]) => R.ast(Object.assign({}, (sec.chefInfo || {})[n], {name:n, n:k}))).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Corrigez le nom, le matricule, le shift et le TL. Taper le nom d'un autre technicien A·S·T lui donne toutes ces machines. Retirer (×) : le technicien M de ces machines fera aussi les A·S·T.</p></fieldset>` : ""}
       <fieldset class="rep"><legend>${two ? "Techniciens M · mensuel" : "Techniciens · tous les préventifs"}</legend><div class="erows" id="se-mt">${mts.map(([n, k]) => R.mt({name:n, n:k})).join("")}</div><p class="z" style="margin:0;font-size:12.5px">Matricule : facultatif, il sert à retrouver le technicien dans la recherche. Corriger un nom le corrige dans toutes les sections ; taper le nom d'un autre technicien fusionne les deux. Pour changer le technicien d'une seule machine : fiche machine › Modifier.</p></fieldset>
       <fieldset class="rep"><legend>Techniciens sans machine · pas encore dans le planning</legend><div class="erows" id="se-xt">${xs.map(R.xt).join("")}</div><div><button type="button" class="addp" data-act="se-add" data-k="xt">+ Ajouter un technicien</button></div><p class="z" style="margin:0;font-size:12.5px">Un technicien de la section qui n'a pas encore de machine dans le planning préventif. Avec son matricule, il peut entrer dans l'application (onglet « Technicien »). Pour lui confier des machines : fiche machine › Modifier, ou « Ajouter une machine ».</p></fieldset>
-      <fieldset class="rep"><legend>Planning de la section</legend><div class="row-btns"><button type="button" class="btn" data-act="se-plan" data-svc="${esc(svc)}">Modifier le planning de la section</button><button type="button" class="btn" data-act="se-addm" data-svc="${esc(svc)}">Ajouter une machine</button>${adm ? `<button type="button" class="btn" data-act="std" data-svc="${esc(svc)}">Standard préventif</button>` : ""}</div><p class="z" style="margin:0;font-size:12.5px">${esc(normText(svc))}</p></fieldset>
+      <fieldset class="rep"><legend>Planning de la section</legend><div class="row-btns"><button type="button" class="btn" data-act="se-plan" data-svc="${esc(svc)}">Modifier le planning de la section</button><button type="button" class="btn" data-act="se-addm" data-svc="${esc(svc)}">Ajouter une machine</button><button type="button" class="btn" data-act="std" data-svc="${esc(svc)}">Standard préventif</button></div><p class="z" style="margin:0;font-size:12.5px">${esc(normText(svc))}</p></fieldset>
       <datalist id="se-people">${people.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
       <datalist id="shift-dl">${SHIFT_SUGG.map(n => `<option value="${esc(n)}"></option>`).join("")}</datalist>
     </div>
@@ -2262,9 +2271,9 @@ function openSectionEditor(svc){
   });
 }
 function openMats(){
-  if(!canOrg()) return;
+  const os = orgSecs(); if(os && !os.size) return;
   const seen = new Set(), groups = [];
-  for(const sec of SECTIONS){
+  for(const sec of SECTIONS.filter(x => canEditSec(x.id))){ // le TL : ses sections
     const sm = machines.filter(m => m.svc === sec.id && !isOut(m)), rows = [];
     const add = (n, l) => { if(n && !seen.has(n)){ seen.add(n); rows.push([n, l]); } };
     sec.tls.forEach(t => add(t.name, "TL de section"));
@@ -2632,7 +2641,7 @@ function helperPanel(){ // Réglages › HELPER (manager / admin)
    La check-list du standard s'affiche quand on marque un préventif fait ; tous les points doivent être cochés. */
 const stdList = (svc, code) => ((((S.std || {})[svc] || {})[code]) || []).filter(x => typeof x === "string" && x.trim());
 async function writeStd(svc, entry, txt){
-  if(!canOrg()){ toast("Réservé au manager maintenance.", "late"); return false; }
+  if(!canEditSec(svc)){ toast("Réservé au manager maintenance et au TL de la section.", "late"); return false; }
   const next = Object.assign({}, clone(S.std) || {}, {[svc]: entry});
   if(S.mode === "local"){ S.std = next; saveLocalAll(); scheduleRender(); }
   else{ try{ await S.db.doc("config/std").set(next); }catch(e){ toast("Standard non enregistré (" + ((e && e.code) || "erreur") + ").", "late"); return false; } }
@@ -2640,15 +2649,17 @@ async function writeStd(svc, entry, txt){
   return true;
 }
 function openStd(svc, draft, aiInfo){ // draft : proposition de l'IA, affichée mais pas encore enregistrée
-  if(!canOrg()) return;
-  svc = svc && SVC[svc] ? svc : (S.filters.svc && SVC[S.filters.svc] ? S.filters.svc : SECTIONS[0].id);
+  const secs = SECTIONS.filter(x => canEditSec(x.id)); // le TL : ses sections
+  if(!secs.length) return;
+  svc = svc && SVC[svc] && canEditSec(svc) ? svc : (S.filters.svc && SVC[S.filters.svc] && canEditSec(S.filters.svc) ? S.filters.svc : secs[0].id);
   const used = new Set(machines.filter(m => m.svc === svc && !isOut(m)).flatMap(m => [...m.w].filter(c => TYPES[c])));
   const val = c => draft ? (draft[c] || []).filter(x => typeof x === "string" && x.trim()) : stdList(svc, c);
   const codes = Object.keys(TYPES).filter(c => used.has(c) || val(c).length);
   const hasKey = FIREBASE ? !!S.helperAt || !!lsGet(AI_KEY, "") : !!lsGet(AI_KEY, "");
   const aiBox = `<fieldset class="rep ai"><legend>✦ Assistant IA · lire le standard</legend>
         <p class="z" style="margin:0;font-size:13px">Déposez le document du standard de cette section (PDF, photo, Excel, Word ou texte) : l'IA prépare la check-list de chaque préventif ci-dessous. Vous relisez, corrigez si besoin, puis « Enregistrer ».</p>
-        ${hasKey ? `<div class="z" style="font-size:13px">Clé de l'IA : ${FIREBASE && S.helperAt ? "enregistrée pour l'équipe (Réglages › HELPER)" : "enregistrée sur cet appareil"} · <button type="button" class="lk" data-act="aikey" style="color:var(--accent)">Changer la clé</button></div>`
+        ${hasKey ? `<div class="z" style="font-size:13px">Clé de l'IA : ${FIREBASE && S.helperAt ? "enregistrée pour l'équipe (Réglages › HELPER)" : "enregistrée sur cet appareil"}${canOrg() ? ` · <button type="button" class="lk" data-act="aikey" style="color:var(--accent)">Changer la clé</button>` : ""}</div>`
+          : !canOrg() ? `<div class="lateN" style="font-size:13px">L'IA n'est pas encore activée : le manager enregistre sa clé dans Réglages › HELPER. Vous pouvez quand même écrire le standard ci-dessous.</div>`
           : `<label class="field">Clé de l'IA (${FIREBASE ? "enregistrée pour toute l'équipe : sert aussi à HELPER" : "une seule fois sur cet appareil"})<input id="ai-key" type="password" placeholder="AIza… (Google, gratuite) ou sk-ant-… (Anthropic)" autocomplete="off" spellcheck="false"></label><div class="z" style="font-size:12.5px">Pas de clé ? <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Créer une clé gratuite sur aistudio.google.com</a> (compte Google, sans carte bancaire).</div>`}
         <input type="file" id="ai-files" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.xlsx,.xlsm,.xls,.docx,.txt,.csv,.md">
         <textarea id="ai-text" rows="3" placeholder="… ou collez ici le texte du standard"></textarea>
@@ -2660,7 +2671,7 @@ function openStd(svc, draft, aiInfo){ // draft : proposition de l'IA, affichée 
   dlg.innerHTML = `<form class="dlg" id="std-form" method="dialog">
     <div class="dlg-h"><div><h3 id="dlg-title">Standard préventif</h3><div class="sub">Pour chaque préventif, les points que le technicien doit faire et cocher avant de pouvoir le marquer fait. Un point par ligne.</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
     <div class="dlg-b">
-      <label class="field">Section<select id="std-svc">${SECTIONS.map(x => `<option value="${x.id}" ${x.id === svc ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+      <label class="field">Section<select id="std-svc">${secs.map(x => `<option value="${x.id}" ${x.id === svc ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
       ${aiBox}${draftNote}
       ${codes.map(c => `<fieldset class="rep"><legend>${tcode(c)} ${esc(TYPES[c])} · <span class="z" data-cnt="${c}">${pts(val(c).length)}</span></legend><textarea class="std-ta" data-code="${c}" rows="${Math.min(14, Math.max(6, val(c).length + 1))}" placeholder="Un point de contrôle par ligne, par exemple :&#10;Nettoyer la machine&#10;Vérifier la pression d'air">${esc(val(c).join("\n"))}</textarea></fieldset>`).join("")}
       ${codes.length ? "" : `<p class="z">Aucun préventif planifié dans cette section.</p>`}
@@ -3154,12 +3165,10 @@ function buildReport(){ // en retard + à faire cette semaine ; une partie vide 
   const D = S.D, its = D.items.filter(it => matchIt(it));
   const late = its.filter(it => it.st === "retard"), wk = its.filter(it => it.st === "semaine");
   if(!late.length && !wk.length) return "";
-  const f = [S.filters.svc ? SVC[S.filters.svc].name : "Tous les services", S.filters.who || "Tous les responsables"].join(" · ");
   const pl = (n, w) => `${n} ${w}${n > 1 ? "s" : ""}`, nm = a => new Set(a.map(it => it.m.id)).size;
   const si = {}; SECTIONS.forEach((x, i) => { si[x.id] = i; });
   const L = [];
   L.push(`PRÉVENTIFS — S${CW} (${CW<=NWEEKS?weekRange(CW):""} ${YEAR})`);
-  L.push((S.org && S.org.manager ? "Manager maintenance : " + S.org.manager + " · " : "") + f);
   const part = (title, arr, line) => {
     if(!arr.length) return;
     L.push("", `▶ ${title} : ${pl(arr.length, "préventif")} sur ${pl(nm(arr), "machine")}`);
@@ -3430,10 +3439,12 @@ function nextYearPlan(secIds){
   for(const sec of SECTIONS.filter(x => !secIds || secIds.includes(x.id))){
     const ms = machines.filter(m => m.svc === sec.id && !isOut(m));
     if(!ms.length) continue;
-    const cg = new Set(sectionNorm(sec.id).conge.filter(w => w <= NW));
+    const cg0 = new Set(sectionNorm(sec.id).conge), set = ((((S.org || {}).conges) || {})[Y] || {})[sec.id]; // congés : cette année / l'an prochain (saisis par l'admin ou le TL)
+    const cg = new Set(Array.isArray(set) ? set.filter(w => w >= 1 && w <= NW) : [...cg0].filter(w => w <= NW));
     const prevs = m => [...m.w].map((c, i) => [i + 1, c]).filter(([, c]) => "AMTSD".includes(c));
-    const gapIn = (a, b) => { let g = 0; for(let w = a + 1; w <= b; w++) if(!cg.has(w)) g++; return g; };
-    const regular = m => { const p = prevs(m); if(p.length < 12 || p[0][0] > 6) return false; for(let i = 1; i < p.length; i++){ const g = gapIn(p[i - 1][0], p[i][0]); if(g < 3 || g > 6) return false; } return true; };
+    const gapIn = (a, b, off) => { let g = 0; for(let w = a + 1; w <= b; w++) if(!off.has(w)) g++; return g; };
+    const regular = m => { const p = prevs(m); if(p.length < 12 || p[0][0] > 6) return false; for(let i = 1; i < p.length; i++){ const g = gapIn(p[i - 1][0], p[i][0], cg0); if(g < 3 || g > 6) return false; } return true; };
+    const fits = ws => ws.every((w, i) => !cg.has(w) && (!i || (gapIn(ws[i - 1], w, cg) >= 3 && gapIn(ws[i - 1], w, cg) <= 6))); // ses semaines restent valables avec les congés de l'an prochain
     const avail = []; for(let w = 1; w <= NW; w++) if(!cg.has(w)) avail.push(w); // semaines travaillées
     const load = new Array(NW + 1).fill(0), l0 = new Array(NW0 + 1).fill(0), notes = [];
     for(const m of ms) for(const [w] of prevs(m)) if(w <= NW0) l0[w]++;
@@ -3449,13 +3460,14 @@ function nextYearPlan(secIds){
     const paths = new Map(), put = (ws, d) => ws.forEach(x => { load[x] += d; }), later = [];
     for(const m of ms){ // 1) comme cette année
       const own = prevs(m).map(x => x[0]).filter(w => w <= NW), g = own.length ? gapFrom(m, own[0]) : null;
-      if(regular(m) && g >= 3 && g <= 6){ paths.set(m, own); put(own, 1); } else later.push(m);
+      if(regular(m) && g >= 3 && g <= 6 && fits(own)){ paths.set(m, own); put(own, 1); } else later.push(m);
     }
     const why = m => { const p = prevs(m);
       if(m.added && p.length < 12) return "nouvelle machine";
       if(!p.length) return "aucun préventif cette année";
       if(m._etat && m._etat.k === "arret") return "en arrêt cette année";
       if(p.length < 12) return "année incomplète (" + p.length + " préventifs)";
+      if(!fits(p.map(x => x[0]).filter(w => w <= NW))) return "congés " + Y + " sur ses semaines";
       return "ses semaines ne suivent pas son dernier préventif"; };
     const firsts = m => { // premier préventif possible : 3 à 6 semaines après le dernier de cette année
       const ok = avail.filter(w => w <= 6 && (gapFrom(m, w) == null || (gapFrom(m, w) >= 3 && gapFrom(m, w) <= 6)));
@@ -3481,7 +3493,7 @@ function nextYearPlan(secIds){
     later.sort((a, b) => firsts(a).length - firsts(b).length); // les plus contraintes d'abord
     for(const m of later){ const ws = path(m); paths.set(m, ws); put(ws, 1); } // 2) les semaines les moins chargées
     for(let pass = 0; pass < 3; pass++) for(const m of later){ put(paths.get(m), -1); const ws = path(m); paths.set(m, ws); put(ws, 1); } // puis chacune revoit sa place en tenant compte des autres
-    const st = (l, n) => { const v = []; for(let x = 1; x <= n; x++) if(!cg.has(x)) v.push(l[x] || 0); return {avg: v.reduce((a, b) => a + b, 0) / Math.max(1, v.length), max: Math.max(0, ...v), min: Math.min(...v)}; };
+    const st = (l, n, off = cg) => { const v = []; for(let x = 1; x <= n; x++) if(!off.has(x)) v.push(l[x] || 0); return {avg: v.reduce((a, b) => a + b, 0) / Math.max(1, v.length), max: Math.max(0, ...v), min: Math.min(...v)}; };
     const moved = new Set(later);
     for(let pass = 0; pass < 3; pass++){ // 3) section encore déséquilibrée : une machine change de semaines seulement si cela retire vraiment un pic
       const s = st(load, NW); if(s.max - s.min <= Math.max(2, s.avg * 0.2)) break;
@@ -3497,7 +3509,7 @@ function nextYearPlan(secIds){
       if(moved.has(m)) notes.push({m, why: later.includes(m) ? why(m) : "décalée pour équilibrer la charge", first: w.findIndex(x => "AMTSD".includes(x)) + 1, code: w.find(x => "AMTSD".includes(x))});
     }
     const nW0s = Math.max(0, ...ms.filter(m => BASE_BY_ID[m.id]).map(m => BASE_BY_ID[m.id].w.length)) || NW0; // colonnes du planning Excel de la section
-    res.sec.push({id: sec.id, name: sec.name, n: ms.length, same: ms.length - moved.size, notes, conge: [...cg], before: st(l0, nW0s), after: st(load, NW), load, l0});
+    res.sec.push({id: sec.id, name: sec.name, n: ms.length, same: ms.length - moved.size, notes, conge: [...cg], before: st(l0, nW0s, cg0), after: st(load, NW), load, l0});
   }
   return res;
 }
@@ -3506,15 +3518,16 @@ function openNextYear(){
   const vis = SECTIONS.filter(x => !S.scope || S.scope.has(x.id)).map(x => x.id);
   const nx = nextYearPlan(vis), Y = nx.year, f1 = v => v.toFixed(1).replace(".", ",");
   S.nextYear = nx;
-  const rows = nx.sec.map(s => `<tr><td><b>${esc(s.name)}</b></td><td class="r num">${s.n}</td><td class="r num">${s.same}</td><td class="r num">${s.notes.length}</td><td class="r num">${f1(s.before.avg)} · ${s.before.max}</td><td class="r num"><b>${f1(s.after.avg)} · ${s.after.max}</b></td></tr>`).join("");
+  const rows = nx.sec.map(s => `<tr><td><b>${esc(s.name)}</b></td><td><input class="ny-cg" data-svc="${esc(s.id)}" type="text" value="${esc(s.conge.slice().sort((a, b) => a - b).join(", "))}" placeholder="aucun" aria-label="Semaines de congé ${Y} · ${esc(s.name)}" ${canEditSec(s.id) ? "" : "disabled"}></td><td class="r num">${s.n}</td><td class="r num">${s.same}</td><td class="r num">${s.notes.length}</td><td class="r num">${f1(s.before.avg)} · ${s.before.max}</td><td class="r num"><b>${f1(s.after.avg)} · ${s.after.max}</b></td></tr>`).join("");
+  const canCg = nx.sec.some(s => canEditSec(s.id));
   const det = nx.sec.filter(s => s.notes.length).map(s => `<details class="ny-det"><summary><b>${esc(s.name)}</b> · ${s.notes.length} machine${s.notes.length > 1 ? "s" : ""} replacée${s.notes.length > 1 ? "s" : ""}</summary><ul>${s.notes.map(n => `<li><b>${esc(n.m.num)}</b> <span class="z">${esc(n.m.type)}</span> · ${esc(n.why)} → premier préventif ${esc(n.code)} en S${n.first}</li>`).join("")}</ul></details>`).join("");
-  const cgTxt = [...new Set(nx.sec.flatMap(s => s.conge))].sort((a, b) => a - b);
   dlg.className = "wide";
   dlg.innerHTML = `<div class="dlg">
     <div class="dlg-h"><div><h3 id="dlg-title">Planning ${Y} · proposition</h3><div class="sub">Préparé à partir du planning ${YEAR} actuel (machines ajoutées, modifications et machines sorties du parc compris)</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
     <div class="dlg-b">
-      <p style="margin:0">Même rythme que ${YEAR} : chaque machine garde ses semaines et la suite de son cycle (A · M · M · T · M · M · S · M · M · T · M · M). Les machines nouvelles, incomplètes ou qui ne peuvent pas garder leurs semaines sont replacées : 12 préventifs espacés de 4 ou 5 semaines, sur les semaines qui chargent le moins la section, le premier 3 à 6 semaines après leur dernier préventif de ${YEAR}. ${Y} compte ${nx.nW} semaines${cgTxt.length ? ` ; congés gardés en S${cgTxt.join(" et S")}` : ""}.</p>
-      <div class="scroll"><table class="t"><thead><tr><th>Section</th><th class="r">Machines</th><th class="r">Comme ${YEAR}</th><th class="r">Replacées</th><th class="r">Charge ${YEAR} moy. · max</th><th class="r">Charge ${Y} moy. · max</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p style="margin:0">Même rythme que ${YEAR} : chaque machine garde ses semaines et la suite de son cycle (A · M · M · T · M · M · S · M · M · T · M · M). Les machines nouvelles, incomplètes ou qui ne peuvent pas garder leurs semaines sont replacées : 12 préventifs espacés de 4 ou 5 semaines, sur les semaines qui chargent le moins la section, le premier 3 à 6 semaines après leur dernier préventif de ${YEAR}. ${Y} compte ${nx.nW} semaines. Congés ${Y} : colonne « Congés » (au départ, les mêmes semaines qu'en ${YEAR}).</p>
+      <div class="scroll"><table class="t ny-t"><thead><tr><th>Section</th><th>Congés ${Y} (semaines)</th><th class="r">Machines</th><th class="r">Comme ${YEAR}</th><th class="r">Replacées</th><th class="r">Charge ${YEAR} moy. · max</th><th class="r">Charge ${Y} moy. · max</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${canCg ? `<div class="row-btns" style="align-items:center"><button type="button" class="btn" data-act="nycg">Enregistrer les congés et recalculer</button><span class="z" style="font-size:12.5px">ex. « 32, 33 » ou « 31-33 » ; vide = pas de congé</span></div>` : ""}
       <p class="z" style="margin:0;font-size:12.5px">Charge = nombre de préventifs (A, T, S, M, D) par semaine, hors congés et contrôles hebdomadaires H.</p>
       ${det}
       ${sectionPicker("ny-secs").replace(/<input type="checkbox" value="([^"]+)"/g, (s, id) => vis.includes(id) ? s + " checked" : s + " disabled")}
@@ -3523,6 +3536,94 @@ function openNextYear(){
     <div class="dlg-f"><span class="z" id="ny-msg"></span><span class="sp"></span><button type="button" class="btn" data-act="close">Fermer</button><button type="button" class="btn pri" data-act="nextyeargo">Télécharger l'Excel ${Y}</button></div>
   </div>`;
   if(!dlg.open) dlg.showModal();
+}
+
+/* ---------- Archives : le planning de chaque équipe, avec le statut de chaque préventif ----------
+   Firebase : archIdx/<id> {at, by, kind auto|manuel, note, year, week, svc, name, tl, n} (liste légère) et archives/<id> {rows}.
+   Une archive automatique par section et par semaine (id « 2026-S44-coupe »), faite par le premier admin ou TL connecté. */
+const ARCH_ST = {fait:"f", retard:"r", suspendu:"s", hors:"h", semaine:"w", prochaine:"n", planifie:"p"};
+const ARCH_STN = Object.fromEntries(Object.entries(ARCH_ST).map(([k, v]) => [v, k]));
+async function saveArchive(id, svc, kind, note){
+  derive(); // statut à jour de chaque préventif
+  const sec = SVC[svc], ms = machines.filter(m => m.svc === svc && !isOut(m));
+  if(!sec || !ms.length) return false;
+  const rows = ms.map(m => { const st = Array(m.w.length).fill("."); for(const it of m._items) st[it.w - 1] = ARCH_ST[it.st] || "p";
+    return {num: m.num, type: m.type || "", serie: m.serie || "", proj: m.proj || "", chef: m.chef || "", tech: m.tech || "", w: m.w, st: st.join(""), etat: m._etat && m._etat.k !== "actif" ? m._etat.k : ""}; });
+  const idx = {at: new Date().toISOString(), by: S.meName || "", kind, note: note || "", year: YEAR, week: CW, svc, name: sec.name, tl: sec.tl || "", n: rows.length};
+  await S.fb.rdb.ref().update({["archives/" + id]: {rows}, ["archIdx/" + id]: idx});
+  return true;
+}
+function autoArchive(){
+  if(!FIREBASE || !S.archIdx || !S.fb || CW < 1 || CW > NWEEKS) return;
+  if(!S.archBusy) Object.assign(S, {archBusy: new Set(), archTry: 0});
+  if(!(S.mode === "db" && S.loaded && S.orgLoaded)){ if(S.archTry++ < 20) setTimeout(autoArchive, 3000); return; } // données pas encore chargées
+  if(!canPlan()) return;
+  const os = orgSecs();
+  for(const sec of SECTIONS){
+    if(os && !os.has(sec.id)) continue;
+    const id = `${YEAR}-S${String(CW).padStart(2, "0")}-${sec.id}`;
+    if(S.archIdx[id] || S.archBusy.has(id)) continue;
+    S.archBusy.add(id);
+    saveArchive(id, sec.id, "auto", "").catch(() => {}); // déjà faite par une autre session : rien à faire
+  }
+}
+const archLoad = async id => ((await S.fb.rdb.ref("archives/" + id).once("value")).val() || {}).rows || [];
+function openArchives(){
+  if(!FIREBASE || !canPlan()) return;
+  const os = orgSecs(), mine = id => !os || os.has(id), secs = SECTIONS.filter(x => mine(x.id));
+  const list = Object.entries(S.archIdx || {}).map(([id, a]) => Object.assign({id}, a)).filter(a => a && mine(a.svc)).sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  const bySec = new Map(); for(const a of list){ if(!bySec.has(a.svc)) bySec.set(a.svc, []); bySec.get(a.svc).push(a); }
+  const gone = [...bySec.keys()].filter(s => !SVC[s]); // section supprimée depuis : ses archives restent
+  const block = (id, name) => { const a = bySec.get(id) || [];
+    return `<details class="ny-det"><summary><b>${esc(name)}</b> · ${a.length} archive${a.length > 1 ? "s" : ""}${a[0] ? ` · dernière S${a[0].week} ${a[0].year}` : ""}</summary>${a.length ? `<div class="scroll"><table class="t"><thead><tr><th>Semaine</th><th>Date</th><th>Type</th><th class="r">Machines</th><th></th></tr></thead><tbody>${a.map(r => `<tr><td><b>S${r.week} ${r.year}</b></td><td>${esc(fmtStamp(r.at))}${r.by ? ` <span class="z">· ${esc(r.by)}</span>` : ""}</td><td>${r.kind === "manuel" ? "manuelle" + (r.note ? ` : ${esc(r.note)}` : "") : "automatique"}</td><td class="r num">${r.n || ""}</td><td class="r acct-acts"><button class="btn" data-act="archview" data-id="${esc(r.id)}">Voir</button><button class="btn" data-act="archxlsx" data-id="${esc(r.id)}">Excel</button>${isAdmin() ? `<button class="btn danger" data-act="archdel" data-id="${esc(r.id)}">Supprimer</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<p class="z" style="margin:6px 0">Pas encore d'archive.</p>`}</details>`; };
+  dlg.className = "wide";
+  dlg.innerHTML = `<div class="dlg">
+    <div class="dlg-h"><div><h3 id="dlg-title">Archives des plannings</h3><div class="sub">Le planning de chaque équipe est archivé automatiquement chaque semaine, avec le statut de chaque préventif (fait, en retard…). Ouvrez une archive pour retrouver une information.</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b" id="arch-list">
+      <fieldset class="rep"><legend>Archiver maintenant</legend><div class="row2"><label class="field">Section<select id="arch-svc">${secs.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></label><label class="field">Note (facultatif)<input id="arch-note" type="text" maxlength="120" placeholder="ex. avant la réorganisation de l'équipe"></label></div><div class="row-btns" style="align-items:center"><button type="button" class="btn pri" data-act="archnow">Archiver</button><span class="z" id="arch-msg"></span></div></fieldset>
+      ${secs.map(x => block(x.id, x.name)).join("")}${gone.map(s => block(s, (bySec.get(s)[0] || {}).name || s)).join("")}
+    </div>
+  </div>`;
+  if(!dlg.open) dlg.showModal();
+}
+async function openArchive(id){
+  const a = (S.archIdx || {})[id]; if(!a) return;
+  let rows; try{ rows = await archLoad(id); }catch(e){ toast("Archive illisible (" + fbCode(e) + ").", "late"); return; }
+  const nW = Math.max(1, ...rows.map(r => (r.w || "").length));
+  const cell = (r, i) => { const c = (r.w || "")[i] || ".", s = ARCH_STN[(r.st || "")[i]];
+    return `<span class="${c === "C" ? "off" : s ? "st-" + s : c !== "." ? "t" + c : ""}" title="S${i + 1}${c === "C" ? " · congé" : c !== "." ? " · " + (TYPES[c] || c) + (s ? " · " + STATUS[s] : "") : ""}">${c !== "." && c !== "C" ? esc(c) : ""}</span>`; };
+  const cnt = k => rows.reduce((n, r) => n + [...(r.st || "")].filter(x => x === k).length, 0);
+  dlg.className = "wide";
+  dlg.innerHTML = `<div class="dlg">
+    <div class="dlg-h"><div><h3 id="dlg-title">${esc(a.name)} · archive S${a.week} ${a.year}</h3><div class="sub">${esc(fmtStamp(a.at))}${a.by ? " · " + esc(a.by) : ""}${a.tl ? " · TL : " + esc(a.tl) : ""} · ${rows.length} machines · ${cnt("f")} préventifs faits, ${cnt("r")} en retard${a.note ? " · " + esc(a.note) : ""}</div></div><button type="button" class="btn x" data-act="close">Fermer</button></div>
+    <div class="dlg-b">
+      <div class="row-btns" style="align-items:center"><input id="arch-q" class="arch-q" type="search" placeholder="Chercher : n° machine, type, technicien" aria-label="Chercher dans l'archive"><button type="button" class="btn" data-act="archxlsx" data-id="${esc(id)}">Télécharger l'Excel</button><button type="button" class="btn" data-act="archives">Toutes les archives</button></div>
+      <div class="scroll"><div class="arch-grid" style="--nw:${nW}">${rows.map(r => `<div class="arch-row" data-q="${esc(norm([r.num, r.type, r.serie, r.tech, r.chef, r.proj].join(" ")))}"><div class="arch-n"><b>${esc(r.num)}</b> <span class="z">${esc(r.type)}</span><div class="z">${esc(r.tech)}${r.chef ? " · " + esc(r.chef) : ""}${r.etat ? " · " + esc(ETATS[r.etat] || r.etat) : ""}</div></div><div class="strip arch-strip">${Array.from({length: nW}, (_, i) => cell(r, i)).join("")}</div></div>`).join("")}</div></div>
+      <p class="z" style="font-size:12.5px;margin:0">Vert : fait · rouge : en retard · jaune : semaine de l'archive · encadré : à venir · rayé : congé. Survolez une case pour le détail.</p>
+    </div>
+  </div>`;
+  if(!dlg.open) dlg.showModal();
+  $("#arch-q").addEventListener("input", e => { const q = norm(e.target.value).trim(); for(const r of dlg.querySelectorAll(".arch-row")) r.hidden = !!q && !r.dataset.q.includes(q); });
+}
+async function archiveXlsx(id){
+  const a = (S.archIdx || {})[id]; if(!a) return;
+  let X; try{ X = await loadXlsx(); }catch(e){ toast("Module Excel indisponible : vérifiez la connexion internet.", "late"); return; }
+  let rows; try{ rows = await archLoad(id); }catch(e){ toast("Archive illisible (" + fbCode(e) + ").", "late"); return; }
+  const nW = Math.max(1, ...rows.map(r => (r.w || "").length)), border = {style:"thin", color:{rgb:"BFBFBF"}};
+  const head = ["Techniciens A S T", "Techniciens M", "Projets", "N° des machines", "Types des machines", "N° de série", "État", ...Array.from({length:nW}, (_, i) => "S" + (i + 1))];
+  const aoa = [[`Archive du planning préventif · ${a.name} · S${a.week} ${a.year}${a.tl ? " · TL : " + a.tl : ""} · ${rows.length} machines`], [`Archivé le ${fmtStamp(a.at)}${a.by ? " par " + a.by : ""} · fond vert : fait · fond rouge : en retard · codes : M mensuel, T trimestriel, S semestriel, A annuel, H hebdomadaire, D démarrage, C congé`], head];
+  for(const r of rows) aoa.push([r.chef || "", r.tech || "", r.proj || "", r.num, r.type, r.serie, r.etat ? (ETATS[r.etat] || r.etat) : "", ...Array.from({length:nW}, (_, i) => { const c = (r.w || "")[i] || "."; return c === "." ? null : c; })]);
+  const ws = X.utils.aoa_to_sheet(aoa);
+  ws.A1.s = {font:{bold:true, sz:14}};
+  for(let c = 0; c < head.length; c++){ const ad = X.utils.encode_cell({r:2, c}); if(ws[ad]) ws[ad].s = {font:{bold:true, color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"13202B"}}, alignment:{horizontal:"center", wrapText:true}}; }
+  rows.forEach((r, k) => { for(let i = 0; i < nW; i++){ const ad = X.utils.encode_cell({r:k + 3, c:i + 7}); if(!ws[ad]) continue;
+    const s = (r.st || "")[i], fill = s === "f" ? "C6EFCE" : s === "r" ? "FFC7CE" : XL_FILL[ws[ad].v];
+    ws[ad].s = {border:{top:border, bottom:border, left:border, right:border}, alignment:{horizontal:"center"}, font:{bold:true}}; if(fill) ws[ad].s.fill = {fgColor:{rgb:fill}}; } });
+  ws["!cols"] = [{wch:30}, {wch:24}, {wch:9}, {wch:16}, {wch:22}, {wch:16}, {wch:12}, ...Array.from({length:nW}, () => ({wch:4.5}))];
+  ws["!merges"] = [{s:{r:0, c:0}, e:{r:0, c:12}}, {s:{r:1, c:0}, e:{r:1, c:20}}];
+  const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, sheetName(a.name));
+  const buf = X.write(wb, {bookType:"xlsx", type:"array"});
+  await saveFile(`archive-${String(a.name).replace(/[^\w\u00C0-\u017F-]+/g, "-")}-S${a.week}-${a.year}.xlsx`, new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
 }
 
 /* ---------- Excel : export (même format que le planning, réimportable) et import avec aperçu ---------- */
@@ -3934,6 +4035,36 @@ document.addEventListener("click", async ev => {
     case "export": exportCSV(); break;
     case "xlsxexp": openExport(); break;
     case "nextyear": openNextYear(); break;
+    case "nycg": {
+      const Y = YEAR + 1, NW = isoWeeksIn(Y), vals = {};
+      const parse = s => { const out = new Set(); for(const part of String(s).toUpperCase().replace(/S/g, "").replace(/\s*-\s*/g, "-").split(/[,;\s]+/).filter(Boolean)){ const m = /^(\d{1,2})(?:-(\d{1,2}))?$/.exec(part); if(!m) return null; const a = +m[1], b = m[2] ? +m[2] : a; if(a < 1 || b > NW || b < a) return null; for(let w = a; w <= b; w++) out.add(w); } return [...out].sort((x, y) => x - y); };
+      let bad = null;
+      for(const inp of dlg.querySelectorAll(".ny-cg:not([disabled])")){ const ws = parse(inp.value); if(ws === null){ bad = inp; break; } vals[inp.dataset.svc] = ws; }
+      if(bad){ $("#ny-msg").className = "lateN"; $("#ny-msg").textContent = `Congés à vérifier pour ${SVC[bad.dataset.svc].name} : semaines de 1 à ${NW}.`; bad.focus(); break; }
+      let nc = null;
+      const ok = await writeOrg(o => { o.conges = Object.assign({}, o.conges); o.conges[Y] = Object.assign({}, o.conges[Y], vals); nc = o.conges; },
+        `Congés ${Y} · ` + Object.entries(vals).map(([s, w]) => SVC[s].name + " : " + (w.length ? "S" + w.join(", S") : "aucun")).join(" · "));
+      if(ok){ S.org = Object.assign({}, S.org, {conges: nc}); toast(`Congés ${Y} enregistrés : planning recalculé.`); openNextYear(); }
+      break;
+    }
+    case "archives": openArchives(); break;
+    case "archview": openArchive(el.dataset.id); break;
+    case "archxlsx": el.disabled = true; await archiveXlsx(el.dataset.id); el.disabled = false; break;
+    case "archnow": {
+      const svc = $("#arch-svc").value, id = `${YEAR}-S${String(CW).padStart(2, "0")}-${svc}-${Date.now().toString(36)}`;
+      el.disabled = true; $("#arch-msg").textContent = "Archivage…";
+      try{ await saveArchive(id, svc, "manuel", $("#arch-note").value.trim()); toast(`Planning archivé · ${SVC[svc].name} · S${CW}.`); }
+      catch(e){ toast("Archive non enregistrée (" + fbCode(e) + ").", "late"); el.disabled = false; $("#arch-msg").textContent = ""; }
+      break;
+    }
+    case "archdel": {
+      if(!isAdmin()) break;
+      if(!el.dataset.ok){ el.dataset.ok = "1"; el.textContent = "Confirmer"; break; }
+      const id = el.dataset.id;
+      try{ await S.fb.rdb.ref().update({["archives/" + id]: null, ["archIdx/" + id]: null}); toast("Archive supprimée."); }
+      catch(e){ toast("Non supprimée (" + fbCode(e) + ").", "late"); }
+      break;
+    }
     case "nextyeargo": {
       const ids = pickedSections("ny-secs");
       if(!ids.length){ $("#ny-msg").textContent = "Choisissez au moins une section."; break; }

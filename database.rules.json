@@ -101,6 +101,22 @@
       ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))",
       "org": {
         ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))"
+      },
+      "std": {
+        ".write": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))"
+      }
+    },
+    "archives": {
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))",
+      "$id": {
+        ".write": "auth != null && ((!data.exists() && newData.exists() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))) || (!newData.exists() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))))"
+      }
+    },
+    "archIdx": {
+      ".read": "auth != null && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))",
+      "$id": {
+        ".write": "auth != null && ((!data.exists() && newData.exists() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && (root.child('users/' + auth.uid + '/role').val() === 'tl' || root.child('users/' + auth.uid + '/role').val() === 'admin')))) || (!newData.exists() && (root.child('meta/owner').val() === auth.uid || (root.child('users/' + auth.uid + '/ok').val() === true && root.child('users/' + auth.uid + '/role').val() === 'admin'))))",
+        ".validate": "newData.hasChildren(['at', 'svc', 'year', 'week'])"
       }
     },
     "reqs": {

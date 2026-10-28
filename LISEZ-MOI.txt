@@ -87,6 +87,8 @@
    (Affectations > organigramme) : corriger ses techniciens (nom, matricule,
    shift, TL), ajouter un TL, ajouter une machine, modifier le planning.
    Le nom de la section et des TL déjà en place : seul l'admin les change.
+   Le TL a aussi « Standards préventifs » et « Matricules des techniciens »
+   (Affectations), pour ses sections.
    Chaque modification d'un TL est signée dans le Journal (« par … »).
 
    Technicien qui n'est pas encore dans le planning préventif : bouton
@@ -111,6 +113,16 @@
    après ; « Télécharger l'Excel 2027 » donne une feuille par section (même
    format que le planning) + « Charge par semaine » + « Remarques ».
    Refaites-le en décembre si vous ajoutez des machines d'ici là.
+   Congés de l'année prochaine : colonne « Congés 2027 » de la même fenêtre
+   (ex. « 32, 33 » ou « 31-33 »), saisie par l'admin ou le TL de la section,
+   puis « Enregistrer les congés et recalculer ».
+
+   Archives : Planning > bouton « Archives » (admin et TL). Le planning de
+   chaque équipe est archivé automatiquement chaque semaine, avec le statut
+   de chaque préventif (fait, en retard…). « Archiver maintenant » ajoute une
+   archive avec une note. « Voir » : la grille de l'archive avec recherche ;
+   « Excel » : le fichier de l'archive. Le TL voit les archives de ses
+   sections ; seul l'admin peut supprimer une archive.
 
    Imprimer la fiche de la semaine d'un technicien (papier A4) :
    1. Planning : choisissez la section puis le technicien dans « Responsable ».
