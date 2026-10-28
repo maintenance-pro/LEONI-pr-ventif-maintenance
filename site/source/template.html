@@ -1138,7 +1138,7 @@ function fbSyncMats(){ // par un admin, ou un TL (il ajoute des techniciens)
   if(sig(want) !== sig(S.techMats || {})) S.fb.rdb.ref("techMats").set(Object.keys(want).length ? want : null).catch(e => console.warn("techMats", e));
 }
 function fbLeave(){
-  fbData.forEach(f => f()); fbData = [];
+  fbData.forEach(f => f()); fbData = []; clearInterval(S.apTimer); S.apTimer = null;
   for(const k of Object.keys(modSubs)){ modSubs[k](); delete modSubs[k]; }
   Object.assign(S, {db:null, user:null, mode:"loading", loaded:false, canWrite:false, suivi:{}, config:{}, org:{}, mods:{}, reqs:{}, users:{}, std:{}, apipro:{}, techMats:undefined, orgLoaded:false});
   NT.late = null; NT.pend = null;
@@ -1201,6 +1201,7 @@ function fbEnter(){
   const hu = S.fb.rdb.ref("helperUse"), hz = sn => { S.helperUse = sn.val() || {}; if(S.view === "reglages") scheduleRender(); }; // admins seulement
   hu.on("value", hz, () => {});
   fbData.push(() => ur.off("value", uh), () => tr.off("value", th), () => hr.off("value", hh), () => hq.off("value", hk), () => hu.off("value", hz), ...subscribeAll(S.db));
+  apAutoStart();
   render();
 }
 async function fbSeed(uid){ // reprise des données de l'application claude.ai, une seule fois, dans une base vide
@@ -1475,7 +1476,7 @@ async function initStore(){
   const hasHost = window.claude && typeof window.claude.use === "function";
   if(!hasHost){
     const o = lsGet(LOCAL_KEY, {}); S.suivi = o.suivi || {}; S.config = o.config || {}; S.mods = o.mods || {}; S.org = o.org || {}; S.std = o.std || {}; S.apipro = o.apipro || {};
-    S.mode = "local"; S.loaded = true; S.canWrite = true; S.isOwner = true; buildMachines(); render(); return;
+    S.mode = "local"; S.loaded = true; S.canWrite = true; S.isOwner = true; buildMachines(); render(); apAutoStart(); return;
   }
   render();
   const [db, user, dl] = await Promise.all([claude.use("db"), claude.use("user"), claude.use("downloads")]);
@@ -3563,7 +3564,7 @@ function openNextYear(){
      11-12 vides · 13 type de travail · 14 remarque.
    Codes et réglages : config/apipro {mo: {machine: code}, ws: {technicien: code}, wo: {machine: {S12: OT}}, dur, job}. */
 const AP_DEF = {dur: {M: 1, T: 2, S: 3, A: 4, D: 2, H: 0.5}, job: "PM"};
-const apCfg = () => { const a = S.apipro || {}; return {mo: a.mo || {}, ws: a.ws || {}, wo: a.wo || {}, dur: Object.assign({}, AP_DEF.dur, a.dur), job: a.job || AP_DEF.job, at: a.at, by: a.by, file: a.file}; };
+const apCfg = () => { const a = S.apipro || {}; return {mo: a.mo || {}, ws: a.ws || {}, wo: a.wo || {}, sent: a.sent || {}, dur: Object.assign({}, AP_DEF.dur, a.dur), job: a.job || AP_DEF.job, at: a.at, by: a.by, file: a.file}; };
 const apKey = v => norm(String(v == null ? "" : v)).replace(/[\s._\-\/]+/g, ""); // « M 727 » = « m727 »
 const apSecs = () => SECTIONS.filter(x => canEditSec(x.id)); // le TL : ses sections
 async function writeApipro(patch, txt){
@@ -3622,6 +3623,76 @@ async function apLatest(h){ // dernier export d'API PRO dans le dossier (pas not
   }
   return best;
 }
+async function apNewFiles(h, since){ // exports d'API PRO arrivés depuis la dernière lecture, du plus ancien au plus récent
+  const fs = [];
+  for await (const [name, fh] of h.entries()){
+    if(fh.kind !== "file" || !/\.(xlsx|xls|csv|txt)$/i.test(name) || /^import_cmu/i.test(name)) continue;
+    const f = await fh.getFile(); if(f.lastModified > (since || 0)) fs.push(f);
+  }
+  return fs.sort((a, b) => a.lastModified - b.lastModified);
+}
+async function apWrite(h, out, keys, head){ // Import_CMU.csv : complété s'il est encore là (pas encore importé par API PRO), sinon créé
+  let prev = "";
+  try{ prev = await (await (await h.getFileHandle("Import_CMU.csv")).getFile()).text(); }catch(e){}
+  const fh = await h.getFileHandle("Import_CMU.csv", {create: true}), w = await fh.createWritable();
+  await w.write((prev.trim() ? prev.replace(/\s*$/, "\r\n") : "") + apCsv(out, head && !prev.trim())); await w.close();
+  const sent = Object.assign({}, apCfg().sent), day = todayISO(); for(const k of keys) sent[k] = day;
+  await writeApipro({sent}, `API PRO · ${out.length} préventif${out.length > 1 ? "s" : ""} fait${out.length > 1 ? "s" : ""} envoyé${out.length > 1 ? "s" : ""} (Import_CMU.csv${prev.trim() ? ", complété" : ""})`);
+  return prev.trim() ? "complété" : "créé";
+}
+/* Synchronisation automatique sur ce PC : à l'ouverture et toutes les 30 min, si le dossier d'échange est relié et
+   autorisé. Lit les exports d'API PRO arrivés depuis la dernière fois et envoie les préventifs faits pas encore envoyés.
+   Réglage et dernières nouvelles gardés sur ce PC (localStorage), le registre des envois pour toute l'équipe. */
+const AP_SYNC_KEY = "preventif-apsync";
+const apSync = () => Object.assign({on: true, col: {}}, lsGet(AP_SYNC_KEY, {}) || {});
+const apSyncSet = patch => lsSet(AP_SYNC_KEY, Object.assign(apSync(), patch));
+async function apSyncNow(manual){
+  if(S.apBusy || !apHasFS() || !apSecs().length) return null;
+  const h = await apDir(manual); if(!h) return manual ? {err: "aucun dossier relié"} : null;
+  if(!manual){ try{ if(await h.queryPermission({mode: "readwrite"}) !== "granted") return {ask: true}; }catch(e){ return null; } }
+  S.apBusy = true;
+  const res = {read: [], codes: 0, rows: 0};
+  try{
+    const st = apSync();
+    for(const f of await apNewFiles(h, st.lastRead)){
+      const data = await apRead(f), col = (st.col || {})[data.head.join("|")] || apGuess(data.head);
+      if(col.mo >= 0 || col.wo >= 0){
+        const r = apAnalyze(data, col);
+        if(r.mo + r.wo + r.ws){ await writeApipro(Object.assign({file: f.name}, r.next), `API PRO · synchronisation « ${f.name} » : ${r.mo} codes machine, ${r.wo} OT, ${r.ws} codes technicien`); res.codes += r.mo + r.wo + r.ws; }
+        res.read.push(f.name);
+      }
+      apSyncSet({lastRead: f.lastModified});
+    }
+    const {out, keys} = apRows(apSecs().map(x => x.id), 1, Math.max(1, Math.min(CW, NWEEKS)), true, true);
+    if(out.length){ await apWrite(h, out, keys, false); res.rows = out.length; }
+    apSyncSet({last: Date.now(), lastRows: res.rows, lastCodes: res.codes, lastRead_names: res.read.join(", ")});
+  }catch(e){ console.warn("API PRO", e); res.err = (e && (e.message || e.name)) || "erreur"; }
+  S.apBusy = false;
+  if(dlg.open && $("#ap-prev")) apPreview();
+  return res;
+}
+function apReport(r, quiet){
+  if(!r) return;
+  if(r.err) toast("API PRO : synchronisation impossible (" + r.err + ").", "late");
+  else if(r.rows || r.codes || !quiet) toast(`API PRO synchronisé : ${r.rows} préventif${r.rows > 1 ? "s" : ""} envoyé${r.rows > 1 ? "s" : ""}${r.codes ? ` · ${r.codes} code${r.codes > 1 ? "s" : ""} mis à jour` : ""}.`);
+  const el = $("#ap-syncst"); if(el) el.textContent = apSyncText();
+}
+function apSyncText(){
+  const s = apSync();
+  return s.last ? `Dernière synchronisation : ${fmtStamp(new Date(s.last).toISOString())} · ${s.lastRows || 0} préventif(s) envoyé(s)${s.lastRead_names ? " · lu : " + s.lastRead_names : ""}` : "Pas encore de synchronisation sur ce PC.";
+}
+function apAutoStart(tries = 0){ // à l'ouverture (admin ou TL), puis toutes les 30 min
+  clearInterval(S.apTimer); S.apTimer = null;
+  if(!apHasFS()) return;
+  if(!(S.loaded && (S.orgLoaded || S.mode === "local"))){ if(tries < 40) setTimeout(() => apAutoStart(tries + 1), 3000); return; }
+  if(!apSecs().length || !apSync().on) return;
+  const run = async () => {
+    const r = await apSyncNow(false);
+    if(r && r.ask) toast("API PRO : autorisez le dossier d'échange pour la synchronisation.", "", {label: "Autoriser", fn: async () => apReport(await apSyncNow(true))});
+    else apReport(r, true);
+  };
+  run(); S.apTimer = setInterval(run, 30 * 60 * 1000);
+}
 const apCsv = (out, head) => (head ? [["WO_key", "Jobexec_date", "MO_key", "WO_name", "Code1_key", "Code2_key", "Code3_key", "Stop_time", "Work_supplier_key", "Quantity", "", "", "Job_type", "Remark"], ...out] : out).map(r => r.join(";")).join("\r\n") + "\r\n"; // UTF-8 sans BOM, comme l'import WMABE
 function apGuess(head){
   const col = {}, used = new Set();
@@ -3646,22 +3717,25 @@ function apAnalyze(data, col){
   }
   return Object.assign(res, {next: {mo, ws, wo}});
 }
-function apRows(ids, from, to, full){ // lignes du fichier Import_CMU.csv : préventifs faits entre deux semaines
-  const cfg = apCfg(), out = [], cnt = {all: 0, noMo: 0, noWo: 0, noWs: 0};
+function apRows(ids, from, to, full, onlyNew){ // lignes du fichier Import_CMU.csv : préventifs faits entre deux semaines (onlyNew : pas encore envoyés)
+  const cfg = apCfg(), out = [], keys = [], cnt = {all: 0, noMo: 0, noWo: 0, noWs: 0, sent: 0};
   const cl = s => String(s == null ? "" : s).replace(/[;\r\n"]+/g, " ").replace(/\s+/g, " ").trim();
   derive();
   for(const m of machines) for(const it of (m._items || [])){
     if(it.st !== "fait" || !ids.includes(m.svc) || !it.rec || !it.rec.d) continue;
     const dw = yearWeek(new Date(it.rec.d + "T12:00:00")); if(dw < from || dw > to) continue;
     const moK = cfg.mo[m.id] || "", wos = cfg.wo[m.id] || {}, woK = wos["S" + it.w] || wos["S" + it.ew] || "", par = it.rec.par || itemTech(it), wsK = cfg.ws[par] || "";
+    const key = m.id + "|" + it.w;
+    if(onlyNew && cfg.sent[key]){ cnt.sent++; continue; }
     cnt.all++; if(!moK) cnt.noMo++; if(!woK) cnt.noWo++; if(!wsK) cnt.noWs++;
     if(full && (!moK || !woK)) continue;
+    keys.push(key);
     const chk = Array.isArray(it.rec.chk) && it.rec.chk.length ? ` · check-list ${it.rec.chk.length} points` : "";
     out.push([woK, fmtISO(it.rec.d), moK, cl(`Préventif ${TYPES[it.code]} S${it.w} ${m.num}`).slice(0, 60), "", "", "", "", wsK, String(cfg.dur[it.code] ?? 1), "", "", cl(cfg.job),
       cl(`Préventif ${TYPES[it.code].toLowerCase()} S${it.w} ${m.num} fait le ${fmtISO(it.rec.d)} par ${par}${chk}${it.rec.c ? " · " + it.rec.c : ""}`).slice(0, 250)]);
   }
   out.sort((a, b) => a[1].split("/").reverse().join("").localeCompare(b[1].split("/").reverse().join("")) || a[3].localeCompare(b[3], "fr", {numeric: true}));
-  return {out, cnt};
+  return {out, cnt, keys};
 }
 function openApipro(){
   const secs = apSecs(); if(!secs.length) return;
@@ -3678,7 +3752,10 @@ function openApipro(){
       <fieldset class="rep"><legend>1 · Importer depuis API PRO</legend>
         <p class="z" style="margin:0;font-size:13px">Dans API PRO, exportez en Excel ou CSV la liste des machines (code MO, nom ou n° de machine, n° de série) ou la liste des OT préventifs (n° d'OT, code machine, date prévue, technicien). L'application relie chaque ligne à sa machine par le n° de série ou le n° de machine.</p>
         <div class="ap-ways">
-          <div><b>Sur ce PC · dossier d'échange</b><div class="z" id="ap-dirst" style="font-size:12.5px">${apHasFS() ? "…" : "Disponible avec Chrome ou Edge."}</div>${apHasFS() ? `<div class="row-btns"><button type="button" class="btn" data-act="apdir">Relier le dossier (ex. Z:\\)</button><button type="button" class="btn pri" data-act="apread">Lire le dernier export API PRO</button></div>` : ""}</div>
+          <div><b>Sur ce PC · dossier d'échange</b><div class="z" id="ap-dirst" style="font-size:12.5px">${apHasFS() ? "…" : "Disponible avec Chrome ou Edge."}</div>${apHasFS() ? `<div class="row-btns"><button type="button" class="btn" data-act="apdir">Relier le dossier (ex. Z:\\)</button><button type="button" class="btn pri" data-act="apread">Lire le dernier export API PRO</button></div>
+            <label class="chk"><input type="checkbox" id="ap-auto" ${apSync().on ? "checked" : ""}> Synchroniser automatiquement sur ce PC (à l'ouverture et toutes les 30 min)</label>
+            <div class="row-btns" style="align-items:center"><button type="button" class="btn" data-act="apsync">Synchroniser maintenant</button></div>
+            <div class="z" id="ap-syncst" style="font-size:12.5px">${esc(apSyncText())}</div>` : ""}</div>
           <div><b>Copier-coller</b><div class="z" style="font-size:12.5px">Dans une liste d'API PRO : sélectionnez les lignes avec les titres, Ctrl+C, puis Ctrl+V ici.</div><textarea id="ap-paste" rows="3" placeholder="Collez ici les lignes copiées dans API PRO"></textarea><div class="row-btns"><button type="button" class="btn" data-act="appaste">Lire le texte collé</button></div></div>
           <div><b>Fichier</b><div class="z" style="font-size:12.5px">Un export Excel ou CSV d'API PRO.</div><input type="file" id="ap-file" accept=".xlsx,.xls,.csv,.txt"></div>
         </div>
@@ -3696,6 +3773,7 @@ function openApipro(){
       <fieldset class="rep"><legend>3 · Exporter vers API PRO · préventifs faits</legend>
         <div class="row2"><label class="field">De la semaine<select id="ap-from">${wkOpts(Math.max(1, Math.min(CW, NWEEKS)))}</select></label><label class="field">À la semaine<select id="ap-to">${wkOpts(Math.max(1, Math.min(CW, NWEEKS)))}</select></label></div>
         <div class="secpick" id="ap-secs">${secs.map(x => `<label class="chk"><input type="checkbox" value="${esc(x.id)}" checked> ${esc(x.name)}</label>`).join("")}</div>
+        <label class="chk"><input type="checkbox" id="ap-new" checked> Seulement les préventifs pas encore envoyés à API PRO (sinon les heures seraient comptées deux fois)</label>
         <label class="chk"><input type="checkbox" id="ap-full" checked> Seulement les lignes avec n° d'OT et code machine (l'import « Transaction (work supplier) WMABE » refuse un OT inconnu)</label>
         <label class="chk"><input type="checkbox" id="ap-head"> Ajouter une ligne de titres (à ne pas cocher pour l'import WMABE)</label>
         <div id="ap-prev"></div>
@@ -3707,7 +3785,8 @@ function openApipro(){
   if(!dlg.open) dlg.showModal();
   if(apHasFS()) apDir(false).then(h => { const el = $("#ap-dirst"); if(el) el.textContent = h ? `Dossier relié : ${h.name}` : "Aucun dossier relié : choisissez le dossier où API PRO exporte et importe (ex. Z:\\)."; });
   const prev = () => apPreview();
-  for(const id of ["ap-from", "ap-to", "ap-full"]) $("#" + id).addEventListener("change", prev);
+  for(const id of ["ap-from", "ap-to", "ap-full", "ap-new"]) $("#" + id).addEventListener("change", prev);
+  if($("#ap-auto")) $("#ap-auto").addEventListener("change", e => { apSyncSet({on: e.target.checked}); toast(e.target.checked ? "Synchronisation automatique activée sur ce PC." : "Synchronisation automatique arrêtée sur ce PC."); apAutoStart(); });
   $("#ap-secs").addEventListener("change", prev);
   prev();
   $("#ap-file").addEventListener("change", async e => {
@@ -3739,10 +3818,10 @@ function apMapUI(col){
 }
 function apPreview(){
   const ids = [...document.querySelectorAll("#ap-secs input:checked")].map(i => i.value), from = Number($("#ap-from").value), to = Number($("#ap-to").value);
-  const {out, cnt} = apRows(ids, Math.min(from, to), Math.max(from, to), $("#ap-full").checked);
-  $("#ap-prev").innerHTML = `<p style="margin:6px 0">${cnt.all} préventif${cnt.all > 1 ? "s" : ""} fait${cnt.all > 1 ? "s" : ""} sur la période · <b>${out.length} ligne${out.length > 1 ? "s" : ""} dans le fichier</b>${cnt.noWo ? ` · <span class="lateN">${cnt.noWo} sans n° d'OT</span>` : ""}${cnt.noMo ? ` · <span class="lateN">${cnt.noMo} sans code machine</span>` : ""}${cnt.noWs ? ` · ${cnt.noWs} sans code technicien` : ""}</p>
+  const {out, cnt, keys} = apRows(ids, Math.min(from, to), Math.max(from, to), $("#ap-full").checked, $("#ap-new").checked);
+  $("#ap-prev").innerHTML = `<p style="margin:6px 0">${cnt.all} préventif${cnt.all > 1 ? "s" : ""} fait${cnt.all > 1 ? "s" : ""} sur la période · <b>${out.length} ligne${out.length > 1 ? "s" : ""} dans le fichier</b>${cnt.noWo ? ` · <span class="lateN">${cnt.noWo} sans n° d'OT</span>` : ""}${cnt.noMo ? ` · <span class="lateN">${cnt.noMo} sans code machine</span>` : ""}${cnt.noWs ? ` · ${cnt.noWs} sans code technicien` : ""}${cnt.sent ? ` · ${cnt.sent} déjà envoyé${cnt.sent > 1 ? "s" : ""}` : ""}</p>
     ${out.length ? `<div class="scroll"><table class="t ap-t"><thead><tr><th>OT</th><th>Date</th><th>Machine</th><th>Nom</th><th>Technicien</th><th class="r">Heures</th><th>Remarque</th></tr></thead><tbody>${out.slice(0, 12).map(r => `<tr><td class="mono">${esc(r[0]) || "—"}</td><td>${esc(r[1])}</td><td class="mono">${esc(r[2]) || "—"}</td><td>${esc(r[3])}</td><td class="mono">${esc(r[8]) || "—"}</td><td class="r num">${esc(r[9])}</td><td class="z">${esc(r[13])}</td></tr>`).join("")}</tbody></table></div>${out.length > 12 ? `<p class="z" style="margin:0">… et ${out.length - 12} autres lignes.</p>` : ""}` : ""}`;
-  S.apOut = out;
+  S.apOut = out; S.apKeys = keys;
 }
 
 /* ---------- Archives : le planning de chaque équipe, avec le statut de chaque préventif ----------
@@ -4259,6 +4338,7 @@ document.addEventListener("click", async ev => {
     case "apsave": {
       const r = S.apRes; if(!r) break;
       el.disabled = true;
+      apSyncSet({col: Object.assign({}, apSync().col, {[S.apData.head.join("|")]: S.apCol})});
       if(await writeApipro(Object.assign({file: S.apData.name}, r.next), `API PRO · import « ${S.apData.name} » : ${r.mo} codes machine, ${r.wo} OT, ${r.ws} codes technicien`)){ toast("Codes API PRO enregistrés."); openApipro(); }
       else el.disabled = false;
       break;
@@ -4270,10 +4350,11 @@ document.addEventListener("click", async ev => {
       const csv = apCsv(out, $("#ap-head").checked), n = `${out.length} ligne${out.length > 1 ? "s" : ""}`;
       if(a === "apdl"){ await saveFile("Import_CMU.csv", new Blob([csv], {type: "text/csv;charset=utf-8"})); msg(`${n} exportée${out.length > 1 ? "s" : ""}.`); break; }
       const h = await apDir(true); if(!h){ msg("Reliez d'abord le dossier d'échange (partie 1).", true); break; }
-      try{ const fh = await h.getFileHandle("Import_CMU.csv", {create: true}), w = await fh.createWritable(); await w.write(csv); await w.close(); msg(`${n} écrite${out.length > 1 ? "s" : ""} dans ${h.name}\\Import_CMU.csv : lancez l'import dans API PRO.`); toast("Import_CMU.csv écrit dans " + h.name + "."); }
+      try{ const how = await apWrite(h, out, S.apKeys || [], $("#ap-head").checked); msg(`${n} écrite${out.length > 1 ? "s" : ""} dans ${h.name}\\Import_CMU.csv (${how}) : lancez l'import dans API PRO.`); toast("Import_CMU.csv " + how + " dans " + h.name + "."); apPreview(); }
       catch(e){ msg("Écriture impossible dans le dossier (" + (e.message || e.name) + ").", true); }
       break;
     }
+    case "apsync": { el.disabled = true; apReport(await apSyncNow(true)); el.disabled = false; break; }
     case "apdir": {
       try{ const h = await window.showDirectoryPicker({id: "apipro", mode: "readwrite"}); await apIdb("readwrite", st => st.put(h, "dir")); toast("Dossier d'échange relié : " + h.name + "."); openApipro(); }
       catch(e){ if(!e || e.name !== "AbortError") toast("Dossier non relié (" + ((e && (e.message || e.name)) || "erreur") + ").", "late"); }

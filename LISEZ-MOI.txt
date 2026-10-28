@@ -148,6 +148,14 @@
       lignes avec n° d'OT et code machine ».
    Le dossier relié marche avec Chrome ou Edge (l'autorisation est demandée
    au premier clic).
+   Synchronisation automatique (case cochée dans la partie 1, sur ce PC) :
+   à l'ouverture de l'application puis toutes les 30 min, elle lit les
+   nouveaux exports d'API PRO déposés dans le dossier et écrit dans
+   Import_CMU.csv les préventifs faits PAS ENCORE ENVOYÉS (chacun n'est
+   envoyé qu'une fois). Si API PRO n'a pas encore importé le fichier, il est
+   complété. Côté API PRO, l'administrateur active l'automatisation : voir
+   « Réglages API PRO - transfert automatique.pdf » (AUTO-RUN, export
+   planifié, jobs dans Automation Planner, Automation Timer).
 
    Imprimer la fiche de la semaine d'un technicien (papier A4) :
    1. Planning : choisissez la section puis le technicien dans « Responsable ».
